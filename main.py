@@ -10,6 +10,8 @@ from tools.calculator import CalculatorTool
 from tools.shell import ShellTool
 from tools.web_search import WebSearchTool
 from tools.advanced_file_ops import GlobTool, GrepTool, EditTool
+from tools.todo import TodoTool
+from agent.todo import TodoList
 from utils import setup_logger, get_log_file_path
 
 

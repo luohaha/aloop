@@ -53,9 +53,12 @@ Assistant: [Immediately starts without planning, forgets steps halfway through]
 For file operations:
 - Use glob_files to find files by pattern (fast, efficient)
 - Use grep_content to search within files (much better than reading all files)
-- Use file_read only when you need full contents
+- Use file_read only when you need full contents (avoid reading multiple large files at once)
 - Use edit_file for small changes (don't read entire file then write back)
 - Use file_write only for creating new files or complete rewrites
+
+CRITICAL: Never read multiple large files in a single iteration - this causes context overflow!
+Instead: Use grep_content to find specific information, then read only what you need.
 
 For complex tasks:
 - Use manage_todo_list to track progress

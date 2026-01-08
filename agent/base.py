@@ -182,6 +182,18 @@ class BaseAgent(ABC):
 
                     result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
 
+                    # Truncate overly large results to prevent context overflow
+                    MAX_TOOL_RESULT_LENGTH = 8000  # characters
+                    if len(result) > MAX_TOOL_RESULT_LENGTH:
+                        truncated_length = MAX_TOOL_RESULT_LENGTH
+                        result = (
+                            result[:truncated_length] +
+                            f"\n\n[... Output truncated. Showing first {truncated_length} characters of {len(result)} total. "
+                            f"Use grep_content or glob_files for more targeted searches instead of reading large files.]"
+                        )
+                        if verbose:
+                            print(f"⚠️  Tool result truncated ({len(result)} chars)")
+
                     # Log result (truncated)
                     logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")
 
