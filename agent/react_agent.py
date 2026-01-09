@@ -3,6 +3,7 @@ from llm import LLMMessage
 
 from .base import BaseAgent
 from .context import format_context_prompt
+from utils import terminal_ui
 
 
 class ReActAgent(BaseAgent):
@@ -144,11 +145,4 @@ Always choose the most efficient tool for the task at hand.
     def _print_memory_stats(self):
         """Print memory usage statistics."""
         stats = self.memory.get_stats()
-        total_used = stats['total_input_tokens'] + stats['total_output_tokens']
-        print("\n--- Memory Statistics ---")
-        print(f"Total used: {total_used} tokens (Input: {stats['total_input_tokens']}, Output: {stats['total_output_tokens']})")
-        print(f"Current context: {stats['current_tokens']} tokens")
-        print(f"Compressions: {stats['compression_count']}")
-        print(f"Net savings: {stats['net_savings']} tokens")
-        print(f"Total cost: ${stats['total_cost']:.4f}")
-        print(f"Messages: {stats['short_term_count']} in memory, {stats['summary_count']} summaries")
+        terminal_ui.print_memory_stats(stats)

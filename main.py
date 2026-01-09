@@ -12,7 +12,7 @@ from tools.web_search import WebSearchTool
 from tools.advanced_file_ops import GlobTool, GrepTool, EditTool
 from tools.todo import TodoTool
 from agent.todo import TodoList
-from utils import setup_logger, get_log_file_path
+from utils import setup_logger, get_log_file_path, terminal_ui
 
 
 def create_agent(mode: str = "react", enable_shell: bool = False):
@@ -41,10 +41,10 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
             GrepTool(),
             EditTool(),
         ])
-        print("✨ Advanced file tools enabled (Glob, Grep, Edit)")
+        terminal_ui.print_success("Advanced file tools enabled (Glob, Grep, Edit)")
 
     if enable_shell or Config.ENABLE_SHELL:
-        print("⚠️  Warning: Shell tool enabled - use with caution!")
+        terminal_ui.print_warning("Shell tool enabled - use with caution!")
         tools.append(ShellTool())
 
     # Create LLM instance with retry configuration and base_url
@@ -99,13 +99,13 @@ def main():
     try:
         Config.validate()
     except ValueError as e:
-        print(f"Configuration error: {e}")
+        terminal_ui.print_error(str(e), title="Configuration Error")
         return
 
     # Get task from CLI or prompt user
     task = args.task
     if not task:
-        print("Enter your task (press Enter twice to submit):")
+        terminal_ui.console.print("[bold cyan]Enter your task (press Enter twice to submit):[/bold cyan]")
         lines = []
         while True:
             line = input()
@@ -115,29 +115,33 @@ def main():
         task = "\n".join(lines)
 
     if not task.strip():
-        print("Error: No task provided")
+        terminal_ui.print_error("No task provided")
         return
 
     # Create and run agent
-    print(f"\n{'=' * 60}")
-    print(f"LLM Provider: {Config.LLM_PROVIDER.upper()}")
-    print(f"Model: {Config.get_default_model()}")
-    print(f"Mode: {args.mode.upper()}")
-    print(f"Task: {task}")
-    print(f"{'=' * 60}")
+    terminal_ui.print_header(
+        "🤖 Agentic Loop System",
+        subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
+    )
+
+    # Display configuration
+    config_dict = {
+        "LLM Provider": Config.LLM_PROVIDER.upper(),
+        "Model": Config.get_default_model(),
+        "Mode": args.mode.upper(),
+        "Task": task if len(task) < 100 else task[:97] + "..."
+    }
+    terminal_ui.print_config(config_dict)
 
     agent = create_agent(args.mode, args.enable_shell)
     result = agent.run(task, enable_context=Config.ENABLE_CONTEXT_INJECTION)
 
-    print(f"\n{'=' * 60}")
-    print("FINAL ANSWER:")
-    print(f"{'=' * 60}")
-    print(result)
+    terminal_ui.print_final_answer(result)
 
     # Show log file location
     log_file = get_log_file_path()
     if log_file:
-        print(f"\n📄 Detailed logs: {log_file}")
+        terminal_ui.print_log_location(log_file)
 
 
 if __name__ == "__main__":

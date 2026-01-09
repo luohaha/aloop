@@ -8,7 +8,7 @@ from tools.base import BaseTool
 from tools.todo import TodoTool
 from llm import BaseLLM, LLMMessage, LLMResponse, ToolResult
 from memory import MemoryManager, MemoryConfig
-from utils import get_logger
+from utils import get_logger, terminal_ui
 
 logger = get_logger(__name__)
 
@@ -123,7 +123,7 @@ class BaseAgent(ABC):
         """
         for iteration in range(max_iterations):
             if verbose:
-                print(f"\n--- Iteration {iteration + 1} ---")
+                terminal_ui.print_iteration(iteration + 1, max_iterations)
 
             # Get context (either from memory or local messages)
             if use_memory:
@@ -161,7 +161,7 @@ class BaseAgent(ABC):
             if response.stop_reason == "end_turn":
                 final_answer = self._extract_text(response)
                 if verbose:
-                    print(f"\nFinal answer received.")
+                    terminal_ui.console.print("\n[bold green]✓ Final answer received[/bold green]")
                 return final_answer
 
             # Execute tool calls
@@ -177,14 +177,15 @@ class BaseAgent(ABC):
                 tool_results = []
                 for tc in tool_calls:
                     if verbose:
-                        print(f"Tool call: {tc.name}")
-                        print(f"Input: {tc.arguments}")
+                        terminal_ui.print_tool_call(tc.name, tc.arguments)
 
                     result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
 
                     # Truncate overly large results to prevent context overflow
                     MAX_TOOL_RESULT_LENGTH = 8000  # characters
+                    truncated = False
                     if len(result) > MAX_TOOL_RESULT_LENGTH:
+                        truncated = True
                         truncated_length = MAX_TOOL_RESULT_LENGTH
                         result = (
                             result[:truncated_length] +
@@ -192,7 +193,9 @@ class BaseAgent(ABC):
                             f"Use grep_content or glob_files for more targeted searches instead of reading large files.]"
                         )
                         if verbose:
-                            print(f"⚠️  Tool result truncated ({len(result)} chars)")
+                            terminal_ui.print_tool_result(result, truncated=True)
+                    elif verbose:
+                        terminal_ui.print_tool_result(result, truncated=False)
 
                     # Log result (truncated)
                     logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")

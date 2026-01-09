@@ -5,6 +5,7 @@ import re
 from llm import LLMMessage
 from .base import BaseAgent
 from .context import format_context_prompt
+from utils import terminal_ui
 
 
 class PlanExecuteAgent(BaseAgent):
@@ -105,16 +106,15 @@ Provide your final answer to the user based on the execution results above.
             Final answer as a string
         """
         # Phase 1: Create plan
-        print("\n" + "=" * 60)
-        print("PHASE 1: PLANNING")
-        print("=" * 60)
+        terminal_ui.console.print()
+        terminal_ui.console.rule("[bold cyan]PHASE 1: PLANNING[/bold cyan]", style="cyan")
         plan = self._create_plan(task, enable_context=enable_context)
-        print(f"\n{plan}")
+        terminal_ui.console.print()
+        terminal_ui.console.print(plan, style="dim")
 
         # Phase 2: Execute each step
-        print("\n" + "=" * 60)
-        print("PHASE 2: EXECUTION")
-        print("=" * 60)
+        terminal_ui.console.print()
+        terminal_ui.console.rule("[bold yellow]PHASE 2: EXECUTION[/bold yellow]", style="yellow")
         step_results = []
         steps = self._parse_plan(plan)
 
@@ -122,15 +122,15 @@ Provide your final answer to the user based on the execution results above.
             return "Failed to parse plan into executable steps."
 
         for i, step in enumerate(steps, 1):
-            print(f"\n--- Executing Step {i}/{len(steps)}: {step} ---")
+            terminal_ui.console.print()
+            terminal_ui.console.print(f"[bold magenta]▶ Step {i}/{len(steps)}:[/bold magenta] [white]{step}[/white]")
             result = self._execute_step(step, i, step_results, task)
             step_results.append(f"Step {i}: {step}\nResult: {result}")
-            print(f"✓ Step {i} completed")
+            terminal_ui.print_success(f"Step {i} completed")
 
         # Phase 3: Synthesize final answer
-        print("\n" + "=" * 60)
-        print("PHASE 3: SYNTHESIS")
-        print("=" * 60)
+        terminal_ui.console.print()
+        terminal_ui.console.rule("[bold green]PHASE 3: SYNTHESIS[/bold green]", style="green")
         final_answer = self._synthesize_results(task, step_results)
 
         # Print memory statistics
@@ -141,13 +141,7 @@ Provide your final answer to the user based on the execution results above.
     def _print_memory_stats(self):
         """Print memory usage statistics."""
         stats = self.memory.get_stats()
-        total_used = stats['total_input_tokens'] + stats['total_output_tokens']
-        print("\n--- Memory Statistics ---")
-        print(f"Total used: {total_used} tokens (Input: {stats['total_input_tokens']}, Output: {stats['total_output_tokens']})")
-        print(f"Current context: {stats['current_tokens']} tokens")
-        print(f"Compressions: {stats['compression_count']}")
-        print(f"Net savings: {stats['net_savings']} tokens")
-        print(f"Total cost: ${stats['total_cost']:.4f}")
+        terminal_ui.print_memory_stats(stats)
 
     def _create_plan(self, task: str, enable_context: bool = True) -> str:
         """Generate a plan without using tools.
