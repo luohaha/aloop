@@ -1,32 +1,23 @@
-"""Google Gemini LLM implementation.
-
-Note: This uses the legacy google.generativeai package which is deprecated.
-For production use, consider migrating to the new google.genai package.
-See: https://github.com/google-gemini/deprecated-generative-ai-python
-"""
+"""Google Gemini LLM implementation using the new google.genai SDK."""
 from typing import List, Dict, Any, Optional
 import json
-import warnings
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
 from .retry import with_retry, RetryConfig
 from utils import get_logger
 
-# Suppress the deprecation warning for now
-warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
-
 logger = get_logger(__name__)
 
 
 class GeminiLLM(BaseLLM):
-    """Google Gemini LLM provider."""
+    """Google Gemini LLM provider using google.genai SDK."""
 
     def __init__(self, api_key: str, model: str = "gemini-1.5-pro", **kwargs):
         """Initialize Gemini LLM.
 
         Args:
             api_key: Google AI API key
-            model: Gemini model identifier (e.g., gemini-1.5-pro, gemini-1.5-flash)
+            model: Gemini model identifier (e.g., gemini-2.5-pro, gemini-1.5-flash)
             **kwargs: Additional configuration (including retry_config, base_url)
         """
         super().__init__(api_key, model, **kwargs)
@@ -39,41 +30,43 @@ class GeminiLLM(BaseLLM):
         ))
 
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
 
             # Get base_url from kwargs, or use None (default)
             base_url = kwargs.get('base_url', None)
 
-            # Configure with optional base_url
+            # Initialize client with optional base_url
             if base_url:
-                # Use client_options to set custom endpoint
-                from google.api_core.client_options import ClientOptions
-                client_options = ClientOptions(api_endpoint=base_url)
-                genai.configure(api_key=api_key, client_options=client_options)
+                self.client = genai.Client(
+                    api_key=api_key,
+                    http_options={'api_endpoint': base_url}
+                )
             else:
-                genai.configure(api_key=api_key)
+                self.client = genai.Client(api_key=api_key)
 
-            self.genai = genai
-            self.client = genai.GenerativeModel(model)
+            self.types = types
+            self.model_name = model
         except ImportError:
             raise ImportError(
-                "Google Generative AI package not installed. "
-                "Install with: pip install google-generativeai"
+                "Google GenAI package not installed. "
+                "Install with: pip install google-genai"
             )
 
     @with_retry()
-    def _make_api_call(self, model, messages, tools, generation_config):
+    def _make_api_call(self, model_name, messages, tools, config):
         """Internal method to make API call with retry logic."""
         if tools:
-            return model.generate_content(
-                messages,
-                tools=tools,
-                generation_config=generation_config
+            return self.client.models.generate_content(
+                model=model_name,
+                contents=messages,
+                config=config
             )
         else:
-            return model.generate_content(
-                messages,
-                generation_config=generation_config
+            return self.client.models.generate_content(
+                model=model_name,
+                contents=messages,
+                config=config
             )
 
     def call(
@@ -183,39 +176,51 @@ class GeminiLLM(BaseLLM):
                             "parts": parts
                         })
 
-        # Convert tools to Gemini format if provided
-        gemini_tools = None
+        # Convert tools to new SDK format if provided
+        tool_config = None
         if tools:
-            gemini_functions = []
+            # Create function declarations using new SDK types
+            function_declarations = []
             for tool in tools:
-                gemini_functions.append({
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool["input_schema"]
-                })
-            gemini_tools = [{"function_declarations": gemini_functions}]
+                function_declarations.append(
+                    self.types.FunctionDeclaration(
+                        name=tool["name"],
+                        description=tool["description"],
+                        parameters=tool["input_schema"]
+                    )
+                )
 
-        # Prepare generation config
-        generation_config = {
-            "max_output_tokens": max_tokens,
-        }
-        generation_config.update(kwargs)
-
-        # Create model with system instruction if provided
-        model = self.client
-        if system_instruction:
-            model = self.genai.GenerativeModel(
-                self.model,
-                system_instruction=system_instruction
+            # Create tools list with function calling config
+            tool_config = self.types.Tool(
+                function_declarations=function_declarations
             )
+
+        # Prepare generation config using new SDK types
+        config_dict = {
+            "max_output_tokens": max_tokens,
+            "system_instruction": system_instruction if system_instruction else None,
+        }
+
+        # Add tools if provided
+        if tool_config:
+            config_dict["tools"] = [tool_config]
+            # Enable automatic function calling
+            config_dict["tool_config"] = self.types.ToolConfig(
+                function_calling_config=self.types.FunctionCallingConfig(
+                    mode='AUTO'
+                )
+            )
+
+        config_dict.update(kwargs)
+        config = self.types.GenerateContentConfig(**config_dict)
 
         # Make API call with retry logic
         try:
             response = self._make_api_call(
-                model,
+                self.model_name,
                 gemini_messages,
-                gemini_tools,
-                generation_config
+                tool_config,
+                config
             )
 
             # Log token usage
@@ -229,9 +234,9 @@ class GeminiLLM(BaseLLM):
                 # Check for function calls
                 has_function_call = False
                 try:
-                    if hasattr(response.candidates[0].content, "parts"):
+                    if hasattr(response.candidates[0], "content") and hasattr(response.candidates[0].content, "parts"):
                         has_function_call = any(
-                            hasattr(part, "function_call")
+                            hasattr(part, "function_call") and part.function_call
                             for part in response.candidates[0].content.parts
                         )
                 except (ValueError, AttributeError):
@@ -239,9 +244,9 @@ class GeminiLLM(BaseLLM):
 
                 if has_function_call:
                     stop_reason = "tool_use"
-                elif finish_reason == 1:  # STOP
+                elif str(finish_reason) == "STOP":
                     stop_reason = "end_turn"
-                elif finish_reason == 2:  # MAX_TOKENS
+                elif str(finish_reason) == "MAX_TOKENS":
                     stop_reason = "max_tokens"
                 else:
                     stop_reason = "end_turn"
