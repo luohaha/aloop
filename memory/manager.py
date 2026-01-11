@@ -117,20 +117,20 @@ class MemoryManager:
         # 1. Add system messages (always included)
         context.extend(self.system_messages)
 
-        # 2. Add compressed summaries as user messages
+        # 2. Add summaries: preserved messages FIRST, then summary text
+        # This ensures tool_use/tool_result pairs stay together
         for summary in self.summaries:
-            if summary.summary:
-                from llm import LLMMessage
+            # Add preserved messages first
+            context.extend(summary.preserved_messages)
 
+            # Then add summary text (if any)
+            if summary.summary:
                 context.append(
                     LLMMessage(
                         role="user",
                         content=f"[Previous conversation summary]\n{summary.summary}",
                     )
                 )
-
-            # Add any preserved messages from this summary
-            context.extend(summary.preserved_messages)
 
         # 3. Add short-term memory (recent messages)
         context.extend(self.short_term.get_messages())
@@ -207,16 +207,22 @@ class MemoryManager:
         if self.current_tokens > self.config.compression_threshold:
             return True, f"hard_limit ({self.current_tokens} > {self.config.compression_threshold})"
 
-        # Soft limit: compress if over target and have enough messages
-        # BUG FIX: Changed from > to >= because deque(maxlen=20) means count() max is 20,
-        # and 20 > 20 would never be true
+        # CRITICAL: Compress when short-term memory is full to prevent eviction
+        # If we don't compress, the next message will cause deque to evict the oldest message,
+        # which may break tool_use/tool_result pairs
+        if self.short_term.is_full():
+            return (
+                True,
+                f"short_term_full ({self.short_term.count()}/{self.config.short_term_message_count} messages, "
+                f"current tokens: {self.current_tokens})",
+            )
+
+        # Soft limit: compress if over target token count
         if self.current_tokens > self.config.target_working_memory_tokens:
-            if self.short_term.is_full():  # More semantic: check if short-term memory is full
-                return (
-                    True,
-                    f"soft_limit ({self.current_tokens} > {self.config.target_working_memory_tokens}, "
-                    f"short-term memory full: {self.short_term.count()} messages)",
-                )
+            return (
+                True,
+                f"soft_limit ({self.current_tokens} > {self.config.target_working_memory_tokens})",
+            )
 
         return False, None
 

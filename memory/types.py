@@ -11,10 +11,10 @@ class MemoryConfig:
     # Token budgets
     max_context_tokens: int = 100000  # Maximum context window
     target_working_memory_tokens: int = 30000  # Soft limit - trigger compression at this level
-    compression_threshold: int = 25000  # Hard limit - must compress (lowered from 40000)
+    compression_threshold: int = 40000  # Hard limit - must compress regardless of message count
 
     # Memory windows
-    short_term_message_count: int = 20  # Keep last N messages in short-term memory
+    short_term_message_count: int = 100  # Keep last N messages in short-term memory
 
     # Compression settings
     compression_ratio: float = 0.3  # Target 30% of original size

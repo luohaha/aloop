@@ -234,46 +234,91 @@ Provide a concise but comprehensive summary that captures the essential informat
     ) -> Tuple[List[LLMMessage], List[LLMMessage]]:
         """Separate messages into preserved and compressible.
 
+        Strategy:
+        1. Preserve system messages (if configured)
+        2. Use selective strategy for other messages (system decides based on recency, importance)
+        3. **Critical rule**: Tool pairs (tool_use + tool_result) must stay together
+           - If one is preserved, the other must be preserved too
+           - If one is compressed, the other must be compressed too
+
         Args:
             messages: All messages
 
         Returns:
             Tuple of (preserved, to_compress)
         """
+        preserve_indices = set()
+
+        # Step 1: Mark system messages for preservation
+        for i, msg in enumerate(messages):
+            if self.config.preserve_system_prompts and msg.role == "system":
+                preserve_indices.add(i)
+
+        # Step 2: Apply selective preservation strategy (keep recent N messages)
+        # Preserve last (short_term_message_count / 2) messages by default (sliding window approach)
+        preserve_count = min(self.config.short_term_message_count / 2, len(messages))
+        for i in range(len(messages) - preserve_count, len(messages)):
+            if i >= 0:
+                preserve_indices.add(i)
+
+        # Step 3: Ensure tool pairs stay together
+        tool_pairs = self._find_tool_pairs(messages)
+        for assistant_idx, user_idx in tool_pairs:
+            # If either message in the pair is marked for preservation, preserve both
+            if assistant_idx in preserve_indices or user_idx in preserve_indices:
+                preserve_indices.add(assistant_idx)
+                preserve_indices.add(user_idx)
+            # Otherwise both will be compressed together
+
+        # Step 4: Build preserved and to_compress lists
         preserved = []
         to_compress = []
-
-        for msg in messages:
-            if self._should_preserve(msg):
+        for i, msg in enumerate(messages):
+            if i in preserve_indices:
                 preserved.append(msg)
             else:
                 to_compress.append(msg)
 
+        logger.info(f"Separated: {len(preserved)} preserved, {len(to_compress)} to compress ({len(tool_pairs)} tool pairs)")
         return preserved, to_compress
 
-    def _should_preserve(self, message: LLMMessage) -> bool:
-        """Check if message should be preserved verbatim.
-
-        Args:
-            message: Message to check
+    def _find_tool_pairs(self, messages: List[LLMMessage]) -> List[List[int]]:
+        """Find tool_use/tool_result pairs in messages.
 
         Returns:
-            True if should preserve
+            List of pairs, each pair is [assistant_index, user_index]
         """
-        # Always preserve system prompts
-        if self.config.preserve_system_prompts and message.role == "system":
-            return True
+        pairs = []
+        pending_tool_uses = {}  # tool_id -> message_index
 
-        # Check for tool calls in content
-        if self.config.preserve_tool_calls:
-            content = message.content
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict):
-                        if block.get("type") in ["tool_use", "tool_result", "tool_calls"]:
-                            return True
+        for i, msg in enumerate(messages):
+            if msg.role == "assistant" and isinstance(msg.content, list):
+                # Collect tool_use IDs
+                for block in msg.content:
+                    btype = self._get_block_attr(block, "type")
+                    if btype == "tool_use":
+                        tool_id = self._get_block_attr(block, "id")
+                        if tool_id:
+                            pending_tool_uses[tool_id] = i
 
-        return False
+            elif msg.role == "user" and isinstance(msg.content, list):
+                # Match tool_result with tool_use
+                for block in msg.content:
+                    btype = self._get_block_attr(block, "type")
+                    if btype == "tool_result":
+                        tool_use_id = self._get_block_attr(block, "tool_use_id")
+                        if tool_use_id in pending_tool_uses:
+                            assistant_idx = pending_tool_uses[tool_use_id]
+                            pairs.append([assistant_idx, i])
+                            del pending_tool_uses[tool_use_id]
+
+        return pairs
+
+    def _get_block_attr(self, block, attr: str):
+        """Get attribute from block (supports dict and object)."""
+        if isinstance(block, dict):
+            return block.get(attr)
+        return getattr(block, attr, None)
 
     def _format_messages_for_summary(self, messages: List[LLMMessage]) -> str:
         """Format messages for inclusion in summary prompt.
@@ -293,7 +338,7 @@ Provide a concise but comprehensive summary that captures the essential informat
         return "\n\n".join(formatted)
 
     def _extract_text_content(self, message: LLMMessage) -> str:
-        """Extract text content from message.
+        """Extract text content from message for token estimation.
 
         Args:
             message: Message to extract from
@@ -308,13 +353,17 @@ Provide a concise but comprehensive summary that captures the essential informat
         elif isinstance(content, list):
             text_parts = []
             for block in content:
+                # For dict format
                 if isinstance(block, dict):
                     if block.get("type") == "text":
                         text_parts.append(block.get("text", ""))
-                    elif block.get("type") == "tool_use":
-                        text_parts.append(f"[Tool: {block.get('name', 'unknown')}]")
-                    elif block.get("type") == "tool_result":
-                        text_parts.append("[Tool Result]")
+                    else:
+                        # For tool_use/tool_result, use simple representation
+                        text_parts.append(str(block))
+                # For object format (ContentBlock from Anthropic SDK)
+                else:
+                    # Simple conversion to string for token estimation
+                    text_parts.append(str(block))
             return " ".join(text_parts)
         else:
             return str(content)
@@ -328,10 +377,21 @@ Provide a concise but comprehensive summary that captures the essential informat
         Returns:
             Estimated token count
         """
-        # Simple estimation: 4 characters per token
+        # Improved estimation: account for message structure and content
         total_chars = 0
         for msg in messages:
+            # Add overhead for message structure (role, type fields, etc.)
+            total_chars += 20  # ~5 tokens for structure
+
+            # Extract and count content
             content = self._extract_text_content(msg)
             total_chars += len(content)
 
-        return total_chars // 4
+            # For complex content (lists), add overhead for JSON structure
+            if isinstance(msg.content, list):
+                # Each block has type, id, etc. fields
+                total_chars += len(msg.content) * 30  # ~7 tokens per block overhead
+
+        # More accurate ratio: ~3.5 characters per token for mixed content
+        # (English text is ~4 chars/token, code/JSON is ~3 chars/token)
+        return int(total_chars / 3.5)
