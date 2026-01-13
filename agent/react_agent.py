@@ -53,13 +53,15 @@ Assistant: [Immediately starts without planning, forgets steps halfway through]
 <tool_usage_guidelines>
 For file operations:
 - Use glob_files to find files by pattern (fast, efficient)
-- Use grep_content to search within files (much better than reading all files)
+- Use code_navigator to find function/class definitions (10x faster than grep, AST-based)
+- Use grep_content for text search only (not for finding code structure)
 - Use read_file only when you need full contents (avoid reading multiple large files at once)
-- Use edit_file for small changes (don't read entire file then write back)
+- Use smart_edit for code edits (fuzzy match, auto backup, diff preview)
+- Use edit_file for simple append/insert operations only
 - Use write_file only for creating new files or complete rewrites
 
 CRITICAL: Never read multiple large files in a single iteration - this causes context overflow!
-Instead: Use grep_content to find specific information, then read only what you need.
+Instead: Use code_navigator or grep_content to find specific information, then read only what you need.
 
 For complex tasks:
 - Use manage_todo_list to track progress
@@ -96,7 +98,9 @@ When you have enough information, provide your final answer directly without usi
 
 <available_tools>
 You have access to various tools including:
-- File operations: glob_files, grep_content, edit_file, read_file, write_file, search_files
+- Code navigation: code_navigator (find functions/classes/structure/usages)
+- Code editing: smart_edit (intelligent edits with preview), edit_file
+- File operations: glob_files, grep_content, read_file, write_file, search_files
 - Task management: manage_todo_list
 - Sub-agent delegation: delegate_subtask (for complex multi-step subtasks)
 - Utilities: calculate, web_search, shell

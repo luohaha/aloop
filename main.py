@@ -10,6 +10,8 @@ from tools.calculator import CalculatorTool
 from tools.shell import ShellTool
 from tools.web_search import WebSearchTool
 from tools.advanced_file_ops import GlobTool, GrepTool, EditTool
+from tools.smart_edit import SmartEditTool
+from tools.code_navigator import CodeNavigatorTool
 from tools.todo import TodoTool
 from tools.delegation import DelegationTool
 from agent.todo import TodoList
@@ -36,6 +38,8 @@ def create_agent(mode: str = "react"):
         GlobTool(),
         GrepTool(),
         EditTool(),
+        SmartEditTool(),
+        CodeNavigatorTool(),
         ShellTool(),
     ]
 
