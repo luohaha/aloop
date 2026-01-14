@@ -26,7 +26,6 @@ class MockLLM:
         class MockResponse:
             content = "This is a summary of the conversation so far."
             stop_reason = "end_turn"
-            raw_response = None
 
         return MockResponse()
 

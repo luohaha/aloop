@@ -1,14 +1,17 @@
 """Base agent class for all agent types."""
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from .tool_executor import ToolExecutor
 from .todo import TodoList
 from tools.base import BaseTool
 from tools.todo import TodoTool
-from llm import BaseLLM, LLMMessage, LLMResponse, ToolResult
+from llm import LLMMessage, LLMResponse, ToolResult
 from memory import MemoryManager, MemoryConfig
 from utils import get_logger, terminal_ui
+
+if TYPE_CHECKING:
+    from llm import LiteLLMLLM
 
 logger = get_logger(__name__)
 
@@ -18,7 +21,7 @@ class BaseAgent(ABC):
 
     def __init__(
         self,
-        llm: BaseLLM,
+        llm: "LiteLLMLLM",
         tools: List[BaseTool],
         max_iterations: int = 10,
         memory_config: Optional[MemoryConfig] = None,

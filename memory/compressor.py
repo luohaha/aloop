@@ -29,7 +29,7 @@ Original messages ({count} messages, ~{tokens} tokens):
 
 Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
 
-    def __init__(self, llm: "BaseLLM", config: MemoryConfig):
+    def __init__(self, llm: "LiteLLMLLM", config: MemoryConfig):
         """Initialize compressor.
 
         Args:

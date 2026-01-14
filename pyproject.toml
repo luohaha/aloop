@@ -32,9 +32,7 @@ dependencies = [
     "ddgs>=1.0.0",
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
-    "anthropic>=0.39.0",
-    "openai>=1.0.0",
-    "google-genai>=0.2.0",
+    "litellm>=1.30.0",
     "tiktoken>=0.5.0",
 ]
 

@@ -95,6 +95,11 @@ def is_retryable_error(error: Exception) -> bool:
         return True
 
     error_str = str(error).lower()
+    error_type = type(error).__name__
+
+    # LiteLLM-specific errors
+    if "RateLimitError" in error_type or "APIConnectionError" in error_type:
+        return True
 
     # Other retryable errors
     retryable_indicators = [
