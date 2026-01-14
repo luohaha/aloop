@@ -47,21 +47,21 @@ cp .env.example .env
 Edit `.env` file and configure your LLM provider:
 
 ```bash
-# LLM Provider (required)
-LLM_PROVIDER=gemini  # Options: anthropic, openai, gemini
+# LiteLLM Model Configuration (supports 100+ providers)
+# Format: provider/model_name
+LITELLM_MODEL=anthropic/claude-3-5-sonnet
 
-# API Keys (set the one for your chosen provider)
+# API Keys (set the key for your chosen provider)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Model (optional - uses provider defaults if not set)
-MODEL=gemini-2.5-flash
+# Optional: Custom base URL for proxies or custom endpoints
+LITELLM_API_BASE=
 
-# Base URLs (optional - for proxies, Azure, local deployments)
-ANTHROPIC_BASE_URL=
-OPENAI_BASE_URL=
-GEMINI_BASE_URL=
+# Optional: LiteLLM-specific settings
+LITELLM_DROP_PARAMS=true       # Drop unsupported params instead of erroring
+LITELLM_TIMEOUT=600            # Request timeout in seconds
 
 # Agent Configuration
 MAX_ITERATIONS=100  # Maximum iteration loops
@@ -74,7 +74,7 @@ MEMORY_SHORT_TERM_SIZE=100
 MEMORY_COMPRESSION_RATIO=0.3
 
 # Retry Configuration (for handling rate limits)
-RETRY_MAX_ATTEMPTS=5
+RETRY_MAX_ATTEMPTS=3
 RETRY_INITIAL_DELAY=1.0
 RETRY_MAX_DELAY=60.0
 
@@ -87,9 +87,14 @@ LOG_TO_CONSOLE=false
 
 **Quick setup for different providers:**
 
-- **Anthropic Claude**: Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`
-- **OpenAI GPT**: Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY`
-- **Google Gemini**: Set `LLM_PROVIDER=gemini` and `GEMINI_API_KEY`
+- **Anthropic Claude**: `LITELLM_MODEL=anthropic/claude-3-5-sonnet`
+- **OpenAI GPT**: `LITELLM_MODEL=openai/gpt-4o`
+- **Google Gemini**: `LITELLM_MODEL=gemini/gemini-1.5-pro`
+- **Azure OpenAI**: `LITELLM_MODEL=azure/gpt-4`
+- **AWS Bedrock**: `LITELLM_MODEL=bedrock/anthropic.claude-v2`
+- **Local (Ollama)**: `LITELLM_MODEL=ollama/llama2`
+
+See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for 100+ supported providers.
 
 ### 2. Usage
 
@@ -172,10 +177,8 @@ AgenticLoop/
 │   ├── advanced-features.md     # Advanced features & optimization
 │   └── extending.md             # Extension guide
 ├── llm/                         # LLM abstraction layer
-│   ├── base.py                  # BaseLLM abstract class
-│   ├── anthropic_llm.py         # Anthropic Claude adapter
-│   ├── openai_llm.py            # OpenAI GPT adapter
-│   ├── gemini_llm.py            # Google Gemini adapter
+│   ├── base.py                  # Base data structures (LLMMessage, LLMResponse)
+│   ├── litellm_adapter.py       # LiteLLM adapter (100+ providers)
 │   └── retry.py                 # Retry logic for rate limits
 ├── agent/                       # Agent implementations
 │   ├── base.py                  # BaseAgent abstract class
@@ -186,10 +189,11 @@ AgenticLoop/
 │   └── todo.py                  # Todo list management
 ├── memory/                      # 🧠 Memory management system
 │   ├── types.py                 # Core data structures
-│   ├── manager.py               # Memory orchestrator
+│   ├── manager.py               # Memory orchestrator with persistence
 │   ├── short_term.py            # Short-term memory
 │   ├── compressor.py            # LLM-driven compression
-│   └── token_tracker.py         # Token tracking & costs
+│   ├── token_tracker.py         # Token tracking & costs
+│   └── store.py                 # SQLite-based persistent storage
 ├── tools/                       # Tool implementations
 │   ├── base.py                  # BaseTool abstract class
 │   ├── file_ops.py              # File operation tools (read/write/search)
@@ -221,14 +225,16 @@ See the full configuration template in `.env.example`. Key options:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `LLM_PROVIDER` | LLM provider (anthropic/openai/gemini) | `anthropic` |
-| `MODEL` | Specific model to use | Provider default |
+| `LITELLM_MODEL` | LiteLLM model (provider/model format) | `anthropic/claude-3-5-sonnet` |
+| `LITELLM_API_BASE` | Custom base URL for proxies | Empty |
+| `LITELLM_DROP_PARAMS` | Drop unsupported params | `true` |
+| `LITELLM_TIMEOUT` | Request timeout in seconds | `600` |
 | `MAX_ITERATIONS` | Maximum agent iterations | `100` |
 | `MEMORY_MAX_CONTEXT_TOKENS` | Maximum context window | `100000` |
 | `MEMORY_TARGET_TOKENS` | Target working memory size | `30000` |
 | `MEMORY_COMPRESSION_THRESHOLD` | Compress when exceeded | `25000` |
 | `MEMORY_SHORT_TERM_SIZE` | Recent messages to keep | `100` |
-| `RETRY_MAX_ATTEMPTS` | Retry attempts for rate limits | `5` |
+| `RETRY_MAX_ATTEMPTS` | Retry attempts for rate limits | `3` |
 | `LOG_LEVEL` | Logging level | `DEBUG` |
 
 See [Configuration Guide](docs/configuration.md) for detailed options.
@@ -248,15 +254,22 @@ python test_basic.py
 - **Anthropic API Documentation**: [docs.anthropic.com](https://docs.anthropic.com)
 - **Tool Use Guide**: [Tool Use (Function Calling)](https://docs.anthropic.com/en/docs/tool-use)
 
+## Features
+
+- ✅ **Multi-Provider Support**: 100+ LLM providers via LiteLLM (Anthropic, OpenAI, Google, Azure, AWS Bedrock, local models, etc.)
+- ✅ **Intelligent Memory Management**: Automatic compression with 30-70% token reduction
+- ✅ **Persistent Memory**: SQLite-based session storage and recovery
+- ✅ **ReAct & Plan-Execute Modes**: Flexible agent architectures
+- ✅ **Rich Tool Ecosystem**: File operations, web search, shell commands, code execution
+- ✅ **Automatic Retry Logic**: Built-in handling for rate limits and API errors
+- ✅ **Cost Tracking**: Token usage and cost monitoring across providers
+
 ## Future Improvements
 
 - [ ] Streaming output to display agent thinking process
-- [x] Intelligent memory management with compression
 - [ ] Parallel tool execution
-- [ ] Detailed logging and tracing
 - [ ] Human-in-the-loop for dangerous operations
 - [ ] Multi-agent collaboration system
-- [ ] Persistent memory with session recovery
 - [ ] Semantic retrieval with vector database
 
 ## License
