@@ -14,6 +14,7 @@ from tools.file_ops import FileReadTool, FileWriteTool, FileSearchTool
 from tools.calculator import CalculatorTool
 from tools.shell import ShellTool
 from tools.web_search import WebSearchTool
+from tools.web_fetch import WebFetchTool
 from tools.advanced_file_ops import GlobTool, GrepTool, EditTool
 from tools.smart_edit import SmartEditTool
 from tools.code_navigator import CodeNavigatorTool
@@ -45,6 +46,7 @@ def create_agent(mode: str = "react"):
         FileSearchTool(),
         CalculatorTool(),
         WebSearchTool(),
+        WebFetchTool(),
         GlobTool(),
         GrepTool(),
         EditTool(),

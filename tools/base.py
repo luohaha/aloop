@@ -31,12 +31,19 @@ class BaseTool(ABC):
 
     def to_anthropic_schema(self) -> Dict[str, Any]:
         """Convert to Anthropic tool schema format."""
+        params = self.parameters
+        # Parameters without a 'default' value are required
+        required = [
+            key for key, value in params.items()
+            if "default" not in value
+        ]
+
         return {
             "name": self.name,
             "description": self.description,
             "input_schema": {
                 "type": "object",
-                "properties": self.parameters,
-                "required": list(self.parameters.keys()),
+                "properties": params,
+                "required": required,
             },
         }
