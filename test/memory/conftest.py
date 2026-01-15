@@ -19,7 +19,7 @@ class MockLLM:
         self.last_messages = messages
 
         return LLMResponse(
-            content=self.response_text,
+            message=self.response_text,
             stop_reason="end_turn",
             usage={"input_tokens": 100, "output_tokens": 50}
         )
@@ -27,7 +27,7 @@ class MockLLM:
     def extract_text(self, response):
         """Extract text from response."""
         if isinstance(response, LLMResponse):
-            return response.content
+            return response.message
         return response.content if hasattr(response, "content") else str(response)
 
     def extract_tool_calls(self, response):

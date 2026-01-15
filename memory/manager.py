@@ -200,13 +200,9 @@ class MemoryManager:
         # 1. Add system messages (always included)
         context.extend(self.system_messages)
 
-        # 2. Add summaries: preserved messages FIRST, then summary text
-        # This ensures tool_use/tool_result pairs stay together
+        # 2. Add summaries
         for summary in self.summaries:
-            # Add preserved messages first
-            context.extend(summary.preserved_messages)
-
-            # Then add summary text (if any)
+            # add summary text (if any)
             if summary.summary:
                 context.append(
                     LLMMessage(
@@ -215,7 +211,11 @@ class MemoryManager:
                     )
                 )
 
-        # 3. Add short-term memory (recent messages)
+        # 3. Add preserved messages
+        for summary in self.summaries:
+            context.extend(summary.preserved_messages)
+
+        # 4. Add short-term memory (recent messages)
         context.extend(self.short_term.get_messages())
 
         return context

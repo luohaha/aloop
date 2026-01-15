@@ -241,20 +241,20 @@ class LiteLLMLLM:
             }
 
         return LLMResponse(
-            content=message,
+            message=message,
             stop_reason=stop_reason,
             usage=usage_dict
         )
 
     def extract_text(self, response: LLMResponse) -> str:
         """Extract text from LiteLLM response."""
-        message = response.content
+        message = response.message
         return message.content if hasattr(message, 'content') and message.content else ""
 
     def extract_tool_calls(self, response: LLMResponse) -> List[ToolCall]:
         """Extract tool calls from LiteLLM response."""
         tool_calls = []
-        message = response.content
+        message = response.message
 
         if hasattr(message, "tool_calls") and message.tool_calls:
             for tc in message.tool_calls:
@@ -263,6 +263,8 @@ class LiteLLMLLM:
                     name=tc.function.name,
                     arguments=json.loads(tc.function.arguments)
                 ))
+        else:
+            logger.debug(f"No tool calls found in the response. {message}")
 
         return tool_calls
 

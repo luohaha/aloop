@@ -13,7 +13,7 @@ class LLMMessage:
 @dataclass
 class LLMResponse:
     """Unified response format across all LLM providers."""
-    content: Any  # Response content (text or content blocks)
+    message: Any  # Response content (text or content blocks)
     stop_reason: str  # "end_turn", "tool_use", "max_tokens", etc.
     usage: Optional[Dict[str, int]] = None  # Token usage: {"input_tokens": int, "output_tokens": int}
 
