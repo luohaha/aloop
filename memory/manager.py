@@ -19,7 +19,7 @@ class MemoryManager:
     def __init__(
         self,
         config: MemoryConfig,
-        llm: "BaseLLM",
+        llm: "LiteLLMLLM",
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
         db_path: str = "data/memory.db"

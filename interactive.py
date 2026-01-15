@@ -24,8 +24,8 @@ def run_interactive_mode(agent, mode: str):
 
     # Display configuration
     config_dict = {
-        "LLM Provider": Config.LLM_PROVIDER.upper(),
-        "Model": Config.get_default_model(),
+        "LLM Provider": Config.LITELLM_MODEL.split('/')[0].upper() if '/' in Config.LITELLM_MODEL else "UNKNOWN",
+        "Model": Config.LITELLM_MODEL,
         "Mode": mode.upper(),
         "Commands": "/help, /clear, /stats, /history, /dump-memory, /exit"
     }

@@ -1,8 +1,13 @@
 """Main entry point for the agentic loop system."""
 import argparse
-
+import warnings
+warnings.filterwarnings(
+    "ignore", 
+    message="Pydantic serializer warnings.*", 
+    category=UserWarning
+)
 from config import Config
-from llm import create_llm
+from llm import LiteLLMLLM
 from agent.react_agent import ReActAgent
 from agent.plan_execute_agent import PlanExecuteAgent
 from tools.file_ops import FileReadTool, FileWriteTool, FileSearchTool
@@ -15,6 +20,11 @@ from tools.smart_edit import SmartEditTool
 from tools.code_navigator import CodeNavigatorTool
 from tools.todo import TodoTool
 from tools.delegation import DelegationTool
+from tools.git_tools import (
+    GitStatusTool, GitDiffTool, GitAddTool, GitCommitTool,
+    GitLogTool, GitBranchTool, GitCheckoutTool, GitPushTool,
+    GitPullTool, GitRemoteTool, GitStashTool, GitCleanTool
+)
 from agent.todo import TodoList
 from utils import setup_logger, get_log_file_path, terminal_ui
 from interactive import run_interactive_mode
@@ -43,15 +53,28 @@ def create_agent(mode: str = "react"):
         SmartEditTool(),
         CodeNavigatorTool(),
         ShellTool(),
+        # Git tools
+        GitStatusTool(),
+        GitDiffTool(),
+        GitAddTool(),
+        GitCommitTool(),
+        GitLogTool(),
+        GitBranchTool(),
+        GitCheckoutTool(),
+        GitPushTool(),
+        GitPullTool(),
+        GitRemoteTool(),
+        GitStashTool(),
+        GitCleanTool(),
     ]
 
-    # Create LLM instance with retry configuration and base_url
-    llm = create_llm(
-        provider=Config.LLM_PROVIDER,
-        api_key=Config.get_api_key(),
-        model=Config.get_default_model(),
+    # Create LLM instance with LiteLLM
+    llm = LiteLLMLLM(
+        model=Config.LITELLM_MODEL,
+        api_base=Config.LITELLM_API_BASE,
         retry_config=Config.get_retry_config(),
-        base_url=Config.get_base_url()
+        drop_params=Config.LITELLM_DROP_PARAMS,
+        timeout=Config.LITELLM_TIMEOUT
     )
 
     # Create agent based on mode
@@ -124,8 +147,8 @@ def main():
     )
 
     config_dict = {
-        "LLM Provider": Config.LLM_PROVIDER.upper(),
-        "Model": Config.get_default_model(),
+        "LLM Provider": Config.LITELLM_MODEL.split('/')[0].upper() if '/' in Config.LITELLM_MODEL else "UNKNOWN",
+        "Model": Config.LITELLM_MODEL,
         "Mode": args.mode.upper(),
         "Task": task if len(task) < 100 else task[:97] + "..."
     }

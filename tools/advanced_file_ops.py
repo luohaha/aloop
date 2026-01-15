@@ -76,14 +76,26 @@ Output modes:
 - with_context: Show matching lines with line numbers
 - count: Count matches per file
 
-Much more efficient than reading all files and searching manually.
+File filtering:
+- file_pattern: Glob pattern to filter files BEFORE content search (e.g., '**/*.py', 'src/**/*.js')
+- exclude_patterns: List of glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])
+- Uses hard-coded defaults if not specified
+
+WHEN TO USE:
+- Finding specific code patterns: pattern + file_pattern
+- Searching TODOs/FIXMEs: pattern="TODO|FIXME"
+- Counting occurrences: mode="count"
+- Targeted searches: file_pattern="**/*.py" + pattern="def\\s+\\w+"
+
+WHEN TO USE GlobTool + GrepTool:
+- When you need the file list for multiple operations
+- When file discovery is separate from content search
 
 Examples:
-- Find function definitions: "def\\s+\\w+"
-- Find imports: "^import\\s+"
-- Find TODOs: "TODO|FIXME"
-
-IMPORTANT: Use this instead of reading every file individually."""
+- Find function definitions in Python files: pattern="def\\s+\\w+", file_pattern="**/*.py"
+- Search imports in src/: pattern="^import\\s+", file_pattern="src/**/*.py"
+- Find TODOs excluding tests: pattern="TODO|FIXME", exclude_patterns=["tests/**"]
+- Count all print statements: pattern="print\\(", mode="count" """
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -103,6 +115,19 @@ IMPORTANT: Use this instead of reading every file individually."""
             "case_sensitive": {
                 "type": "boolean",
                 "description": "Whether search is case sensitive (default: true)"
+            },
+            "file_pattern": {
+                "type": "string",
+                "description": "Optional glob pattern to filter files before content search (e.g., '**/*.py', 'src/**/*.js')"
+            },
+            "exclude_patterns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])"
+            },
+            "max_matches_per_file": {
+                "type": "integer",
+                "description": "Maximum matches to show per file in with_context mode (default: 5)"
             }
         }
 
@@ -111,9 +136,12 @@ IMPORTANT: Use this instead of reading every file individually."""
         pattern: str,
         path: str = ".",
         mode: str = "files_only",
-        case_sensitive: bool = True
+        case_sensitive: bool = True,
+        file_pattern: str = None,
+        exclude_patterns: list = None,
+        max_matches_per_file: int = 5
     ) -> str:
-        """Search for pattern in files."""
+        """Search for pattern in files with optional file filtering."""
         try:
             flags = 0 if case_sensitive else re.IGNORECASE
             regex = re.compile(pattern, flags)
@@ -125,17 +153,46 @@ IMPORTANT: Use this instead of reading every file individually."""
             if not base_path.exists():
                 return f"Error: Path does not exist: {path}"
 
+            # Default exclusions if not specified
+            default_excludes = ['*.pyc', '*.so', '*.dylib', '*.dll', '*.exe', '*.bin', '*.jpg', '*.png', '*.gif', '*.pdf', '*.zip', '*.tar', '*.gz']
+
+            # Determine files to search
+            if file_pattern:
+                # Use user-specified file pattern
+                try:
+                    files_to_search = list(base_path.glob(file_pattern))
+                except Exception as e:
+                    return f"Error with file_pattern '{file_pattern}': {str(e)}"
+            else:
+                # Recursively find all files (current behavior)
+                files_to_search = [f for f in base_path.rglob("*") if f.is_file()]
+
+            # Filter out excluded patterns
+            excludes = exclude_patterns if exclude_patterns is not None else default_excludes
+
+            # Pre-compute set of excluded files using glob patterns
+            excluded_files = set()
+            for exclude_pattern in excludes:
+                try:
+                    excluded_files.update(base_path.glob(exclude_pattern))
+                    # Also handle recursive patterns
+                    excluded_files.update(base_path.rglob(exclude_pattern))
+                except Exception:
+                    # Skip invalid patterns
+                    pass
+
+            # Filter files
+            filtered_files = []
+            for file_path in files_to_search:
+                if not file_path.is_file():
+                    continue
+                if file_path not in excluded_files:
+                    filtered_files.append(file_path)
+
             results = []
             files_searched = 0
 
-            for file_path in base_path.rglob("*"):
-                if not file_path.is_file():
-                    continue
-
-                # Skip common non-text files
-                if file_path.suffix in ['.pyc', '.so', '.dylib', '.dll', '.exe', '.bin', '.jpg', '.png', '.gif', '.pdf', '.zip', '.tar', '.gz']:
-                    continue
-
+            for file_path in filtered_files:
                 files_searched += 1
 
                 try:
@@ -151,7 +208,7 @@ IMPORTANT: Use this instead of reading every file individually."""
                         results.append(f"{file_path}: {len(matches)} matches")
                     elif mode == "with_context":
                         lines = content.splitlines()
-                        for match in matches[:5]:  # Limit to 5 matches per file
+                        for match in matches[:max_matches_per_file]:
                             line_no = content[:match.start()].count('\n') + 1
                             if line_no <= len(lines):
                                 results.append(f"{file_path}:{line_no}: {lines[line_no-1].strip()}")

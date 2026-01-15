@@ -21,7 +21,6 @@ class MockLLM:
         return LLMResponse(
             content=self.response_text,
             stop_reason="end_turn",
-            raw_response=None,
             usage={"input_tokens": 100, "output_tokens": 50}
         )
 
