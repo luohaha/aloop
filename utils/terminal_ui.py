@@ -150,9 +150,7 @@ def print_memory_stats(stats: Dict[str, Any]) -> None:
     table.add_row("Net Savings", savings_str)
 
     table.add_row("Total Cost", f"${stats['total_cost']:.4f}")
-    table.add_row(
-        "Messages", f"{stats['short_term_count']} in memory, {stats['summary_count']} summaries"
-    )
+    table.add_row("Messages", f"{stats['short_term_count']} in memory")
 
     console.print(table)
 
