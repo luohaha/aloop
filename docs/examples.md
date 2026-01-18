@@ -198,7 +198,6 @@ For long-running tasks with many iterations:
 ```bash
 # Enable memory management in .env:
 MEMORY_ENABLED=true
-MEMORY_MAX_CONTEXT_TOKENS=100000
 
 # Run a complex task:
 python main.py --mode react --task "Analyze all Python files, find patterns, and generate a detailed report"

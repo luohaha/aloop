@@ -204,26 +204,6 @@ class TokenTracker:
             "compression_overhead_tokens": self.compression_cost,
         }
 
-    def get_budget_status(self, max_tokens: int) -> Dict:
-        """Get current usage vs budget.
-
-        Args:
-            max_tokens: Maximum token budget
-
-        Returns:
-            Dict with usage statistics
-        """
-        total_tokens = self.total_input_tokens + self.total_output_tokens
-        percentage = (total_tokens / max_tokens * 100) if max_tokens > 0 else 0
-
-        return {
-            "total_tokens": total_tokens,
-            "max_tokens": max_tokens,
-            "percentage": percentage,
-            "remaining": max(0, max_tokens - total_tokens),
-            "over_budget": total_tokens > max_tokens,
-        }
-
     def reset(self):
         """Reset all counters."""
         self.total_input_tokens = 0

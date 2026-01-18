@@ -46,6 +46,23 @@ class ShortTermMemory:
         self.messages.clear()
         return messages
 
+    def remove_first(self, count: int) -> List[LLMMessage]:
+        """Remove the first N messages (oldest) from memory.
+
+        This is useful after compression to remove only the compressed messages
+        while preserving any new messages that arrived during compression.
+
+        Args:
+            count: Number of messages to remove from the front
+
+        Returns:
+            List of removed messages
+        """
+        removed = []
+        for _ in range(min(count, len(self.messages))):
+            removed.append(self.messages.popleft())
+        return removed
+
     def is_full(self) -> bool:
         """Check if short-term memory is at capacity.
 

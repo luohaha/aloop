@@ -44,8 +44,6 @@ def main():
 
     # Configure memory settings directly via Config class
     # (In production, these would be set via environment variables)
-    Config.MEMORY_MAX_CONTEXT_TOKENS = 10000
-    Config.MEMORY_TARGET_TOKENS = 500  # Low threshold for demo
     Config.MEMORY_COMPRESSION_THRESHOLD = 400  # Trigger compression quickly
     Config.MEMORY_SHORT_TERM_SIZE = 5
     Config.MEMORY_COMPRESSION_RATIO = 0.3
@@ -54,7 +52,6 @@ def main():
     memory = MemoryManager(mock_llm)
 
     print("\nConfiguration:")
-    print(f"  Target tokens: {Config.MEMORY_TARGET_TOKENS}")
     print(f"  Compression threshold: {Config.MEMORY_COMPRESSION_THRESHOLD}")
     print(f"  Short-term size: {Config.MEMORY_SHORT_TERM_SIZE}")
 

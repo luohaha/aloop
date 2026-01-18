@@ -15,8 +15,8 @@ class TestMemoryManagerBasics:
         assert manager.llm == mock_llm
         assert manager.current_tokens == 0
         assert manager.compression_count == 0
-        assert len(manager.summaries) == 0
         assert len(manager.system_messages) == 0
+        assert manager.short_term.count() == 0
 
     def test_add_system_message(self, mock_llm):
         """Test that system messages are stored separately."""
@@ -81,7 +81,6 @@ class TestMemoryManagerBasics:
 
         assert manager.current_tokens == 0
         assert manager.compression_count == 0
-        assert len(manager.summaries) == 0
         assert len(manager.system_messages) == 0
         assert manager.short_term.count() == 0
 
@@ -93,7 +92,6 @@ class TestMemoryCompression:
         """Test compression triggers when short-term memory is full."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=5,
-            MEMORY_TARGET_TOKENS=100000,  # Very high to avoid soft limit
             MEMORY_COMPRESSION_THRESHOLD=200000,  # Very high to avoid hard limit
         )
         manager = MemoryManager(mock_llm)
@@ -108,26 +106,9 @@ class TestMemoryCompression:
         # After compression, short-term is cleared so it's not full
         assert not manager.short_term.is_full()
 
-    def test_compression_on_soft_limit(self, set_memory_config, mock_llm):
-        """Test compression triggers on soft limit (target tokens)."""
-        set_memory_config(
-            MEMORY_TARGET_TOKENS=50,  # Very low to trigger easily
-            MEMORY_COMPRESSION_THRESHOLD=10000,
-            MEMORY_SHORT_TERM_SIZE=100,  # Large enough to not trigger on count
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Add messages until we exceed target tokens
-        long_message = "This is a long message. " * 50
-        manager.add_message(LLMMessage(role="user", content=long_message))
-
-        # Should trigger compression
-        assert manager.compression_count >= 1
-
     def test_compression_on_hard_limit(self, set_memory_config, mock_llm):
         """Test compression triggers on hard limit (compression threshold)."""
         set_memory_config(
-            MEMORY_TARGET_TOKENS=10000,
             MEMORY_COMPRESSION_THRESHOLD=100,  # Very low to trigger easily
             MEMORY_SHORT_TERM_SIZE=100,
         )
@@ -140,25 +121,29 @@ class TestMemoryCompression:
         assert manager.compression_count >= 1
 
     def test_compression_creates_summary(self, set_memory_config, mock_llm, simple_messages):
-        """Test that compression creates a summary."""
+        """Test that compression creates a summary message in short_term."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=3,
-            MEMORY_TARGET_TOKENS=100000,
+            MEMORY_SHORT_TERM_SIZE=10,  # Large enough to not auto-trigger
             MEMORY_COMPRESSION_THRESHOLD=200000,
         )
         manager = MemoryManager(mock_llm)
 
-        # Add messages to trigger compression
+        # Add messages
         for msg in simple_messages:
             manager.add_message(msg)
 
-        # Trigger compression
-        assert manager.compression_count >= 1
-        assert len(manager.summaries) >= 1
+        # Manually trigger compression with sliding_window strategy (which creates summary)
+        result = manager.compress(strategy=CompressionStrategy.SLIDING_WINDOW)
+        assert result is not None
+        assert manager.compression_count == 1
 
-        # Check that short-term was cleared after compression
-        # Note: may have new messages added after compression
-        assert manager.short_term.count() < len(simple_messages)
+        # Check that summary message exists in short_term (at the front)
+        context = manager.get_context_for_llm()
+        has_summary = any(
+            isinstance(msg.content, str) and msg.content.startswith("[Conversation Summary]")
+            for msg in context
+        )
+        assert has_summary, "Summary message should be present after compression"
 
     def test_get_stats(self, mock_llm, simple_messages):
         """Test getting memory statistics."""
@@ -177,7 +162,6 @@ class TestMemoryCompression:
         assert "compression_cost" in stats
         assert "net_savings" in stats
         assert "short_term_count" in stats
-        assert "summary_count" in stats
 
 
 class TestToolCallMatching:
@@ -188,7 +172,6 @@ class TestToolCallMatching:
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=3,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
-            MEMORY_TARGET_TOKENS=100000,
             MEMORY_COMPRESSION_THRESHOLD=200000,
         )
         manager = MemoryManager(mock_llm)
@@ -283,23 +266,22 @@ class TestToolCallMatching:
         # Check that todo list tool was preserved
         assert compressed is not None
 
-        # Verify the protected tool is in preserved messages or summaries
+        # Verify the protected tool is in context (now stored in short_term)
         found_protected = False
+        context = manager.get_context_for_llm()
 
-        # Check in all summaries (including the one just created)
-        for summary in manager.summaries:
-            for msg in summary.preserved_messages:
-                if isinstance(msg.content, list):
-                    for block in msg.content:
-                        if isinstance(block, dict):
-                            if (
-                                block.get("type") == "tool_use"
-                                and block.get("name") == "manage_todo_list"
-                            ):
-                                found_protected = True
-                                break
+        for msg in context:
+            if isinstance(msg.content, list):
+                for block in msg.content:
+                    if isinstance(block, dict):
+                        if (
+                            block.get("type") == "tool_use"
+                            and block.get("name") == "manage_todo_list"
+                        ):
+                            found_protected = True
+                            break
 
-        assert found_protected, "Protected tool 'manage_todo_list' should be preserved"
+        assert found_protected, "Protected tool 'manage_todo_list' should be preserved in context"
 
     def test_multiple_tool_pairs_in_sequence(self, set_memory_config, mock_llm):
         """Test multiple consecutive tool_use/tool_result pairs."""
