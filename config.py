@@ -40,13 +40,10 @@ class Config:
 
     # Memory Management Configuration
     MEMORY_ENABLED = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
-    MEMORY_MAX_CONTEXT_TOKENS = int(os.getenv("MEMORY_MAX_CONTEXT_TOKENS", "100000"))
-    MEMORY_TARGET_TOKENS = int(os.getenv("MEMORY_TARGET_TOKENS", "50000"))
-    MEMORY_COMPRESSION_THRESHOLD = int(os.getenv("MEMORY_COMPRESSION_THRESHOLD", "40000"))
+    MEMORY_COMPRESSION_THRESHOLD = int(os.getenv("MEMORY_COMPRESSION_THRESHOLD", "60000"))
     MEMORY_SHORT_TERM_SIZE = int(os.getenv("MEMORY_SHORT_TERM_SIZE", "100"))
-    MEMORY_SHORT_TERM_MIN_SIZE = int(os.getenv("MEMORY_SHORT_TERM_MIN_SIZE", "5"))
+    MEMORY_SHORT_TERM_MIN_SIZE = int(os.getenv("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
     MEMORY_COMPRESSION_RATIO = float(os.getenv("MEMORY_COMPRESSION_RATIO", "0.3"))
-    MEMORY_PRESERVE_TOOL_CALLS = True
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
     # Tool Result Processing Configuration

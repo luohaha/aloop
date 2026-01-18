@@ -71,8 +71,7 @@ class MemoryManager:
             f"Tool result processing enabled with external storage: {storage_path or 'in-memory'}"
         )
 
-        # Storage for compressed memories and system messages
-        self.summaries: List[CompressedMemory] = []
+        # Storage for system messages (summaries are now stored as regular messages in short_term)
         self.system_messages: List[LLMMessage] = []
 
         # State tracking
@@ -80,6 +79,9 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+
+        # Summary message prefix for identification
+        self.SUMMARY_PREFIX = "[Conversation Summary]\n"
 
     @classmethod
     def from_session(
@@ -114,10 +116,9 @@ class MemoryManager:
 
         # Restore state
         manager.system_messages = session_data["system_messages"]
-        manager.summaries = session_data["summaries"]
         manager.compression_count = session_data["stats"]["compression_count"]
 
-        # Add messages to short-term memory
+        # Add messages to short-term memory (including any summary messages)
         for msg in session_data["messages"]:
             manager.short_term.add_message(msg)
 
@@ -127,7 +128,6 @@ class MemoryManager:
         logger.info(
             f"Loaded session {session_id}: "
             f"{len(session_data['messages'])} messages, "
-            f"{len(session_data['summaries'])} summaries, "
             f"{manager.current_tokens} tokens"
         )
 
@@ -204,7 +204,6 @@ class MemoryManager:
             logger.debug(
                 f"Compression check: current={self.current_tokens}, "
                 f"threshold={Config.MEMORY_COMPRESSION_THRESHOLD}, "
-                f"target={Config.MEMORY_TARGET_TOKENS}, "
                 f"short_term_full={self.short_term.is_full()}"
             )
 
@@ -217,35 +216,23 @@ class MemoryManager:
         """Get optimized context for LLM call.
 
         Returns:
-            List of messages combining summaries and recent messages
+            List of messages: system messages + short-term messages (which includes summaries)
         """
         context = []
 
         # 1. Add system messages (always included)
         context.extend(self.system_messages)
 
-        # 2. Add summaries
-        for summary in self.summaries:
-            # add summary text (if any)
-            if summary.summary:
-                context.append(
-                    LLMMessage(
-                        role="user",
-                        content=f"[Previous conversation summary]\n{summary.summary}",
-                    )
-                )
-
-        # 3. Add preserved messages
-        for summary in self.summaries:
-            context.extend(summary.preserved_messages)
-
-        # 4. Add short-term memory (recent messages)
+        # 2. Add short-term memory (includes summary messages and recent messages)
         context.extend(self.short_term.get_messages())
 
         return context
 
     def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
+
+        After compression, summary and preserved messages are put back into short_term
+        as regular messages, so they can participate in future compressions.
 
         Args:
             strategy: Compression strategy (None = auto-select)
@@ -254,6 +241,7 @@ class MemoryManager:
             CompressedMemory object if compression was performed
         """
         messages = self.short_term.get_messages()
+        message_count = len(messages)
 
         if not messages:
             logger.warning("No messages to compress")
@@ -263,23 +251,17 @@ class MemoryManager:
         if strategy is None:
             strategy = self._select_strategy(messages)
 
-        logger.info(f"🗜️  Compressing {len(messages)} messages using {strategy} strategy")
+        logger.info(f"🗜️  Compressing {message_count} messages using {strategy} strategy")
 
         try:
-            # CRITICAL: Find orphaned tool_use IDs from previous summaries
-            # These tool_use are waiting for tool_result that might be in current short_term
-            orphaned_tool_use_ids = self._get_orphaned_tool_use_ids_from_summaries()
-
-            # Perform compression (pass orphaned IDs so compressor can protect matching tool_results)
+            # Perform compression
             compressed = self.compressor.compress(
                 messages,
                 strategy=strategy,
                 target_tokens=self._calculate_target_tokens(),
-                orphaned_tool_use_ids=orphaned_tool_use_ids,
             )
 
             # Track compression results
-            self.summaries.append(compressed)
             self.compression_count += 1
             self.was_compressed_last_iteration = True
             self.last_compression_savings = compressed.token_savings
@@ -291,8 +273,29 @@ class MemoryManager:
             compression_cost = compressed.compressed_tokens
             self.token_tracker.add_compression_cost(compression_cost)
 
-            # Clear short-term memory
+            # Remove compressed messages from short-term memory
+            self.short_term.remove_first(message_count)
+
+            # Rebuild short_term with: summary + preserved messages (in order)
+            # Get any remaining messages (added after compression started)
+            remaining_messages = self.short_term.get_messages()
             self.short_term.clear()
+
+            # 1. Add summary first (represents older context)
+            if compressed.summary:
+                summary_message = LLMMessage(
+                    role="user",
+                    content=f"{self.SUMMARY_PREFIX}{compressed.summary}",
+                )
+                self.short_term.add_message(summary_message)
+
+            # 2. Add preserved messages in order
+            for msg in compressed.preserved_messages:
+                self.short_term.add_message(msg)
+
+            # 3. Add any remaining messages
+            for msg in remaining_messages:
+                self.short_term.add_message(msg)
 
             # Update current token count
             old_tokens = self.current_tokens
@@ -302,7 +305,8 @@ class MemoryManager:
             logger.info(
                 f"✅ Compression complete: {compressed.original_tokens} → {compressed.compressed_tokens} tokens "
                 f"({compressed.savings_percentage:.1f}% saved, ratio: {compressed.compression_ratio:.2f}), "
-                f"context: {old_tokens} → {self.current_tokens} tokens"
+                f"context: {old_tokens} → {self.current_tokens} tokens, "
+                f"short_term now has {self.short_term.count()} messages"
             )
 
             return compressed
@@ -335,13 +339,6 @@ class MemoryManager:
                 True,
                 f"short_term_full ({self.short_term.count()}/{Config.MEMORY_SHORT_TERM_SIZE} messages, "
                 f"current tokens: {self.current_tokens})",
-            )
-
-        # Soft limit: compress if over target token count
-        if self.current_tokens > Config.MEMORY_TARGET_TOKENS:
-            return (
-                True,
-                f"soft_limit ({self.current_tokens} > {Config.MEMORY_TARGET_TOKENS})",
             )
 
         return False, None
@@ -395,42 +392,6 @@ class MemoryManager:
         original_tokens = self.current_tokens
         target = int(original_tokens * Config.MEMORY_COMPRESSION_RATIO)
         return max(target, 500)  # Minimum 500 tokens for summary
-
-    def _get_orphaned_tool_use_ids_from_summaries(self) -> set:
-        """Get tool_use IDs from summaries that don't have matching tool_result yet.
-
-        These are tool_use that were preserved in previous compressions but their
-        tool_result might arrive in later messages (in current short_term).
-
-        Returns:
-            Set of tool_use IDs that are waiting for results
-        """
-        orphaned_ids = set()
-
-        for summary in self.summaries:
-            # Collect tool_use IDs from preserved messages
-            tool_use_ids = set()
-            tool_result_ids = set()
-
-            for msg in summary.preserved_messages:
-                if isinstance(msg.content, list):
-                    for block in msg.content:
-                        if isinstance(block, dict):
-                            if block.get("type") == "tool_use":
-                                tool_use_ids.add(block.get("id"))
-                            elif block.get("type") == "tool_result":
-                                tool_result_ids.add(block.get("tool_use_id"))
-
-            # Orphaned = tool_use without result in the same summary
-            summary_orphaned = tool_use_ids - tool_result_ids
-            orphaned_ids.update(summary_orphaned)
-
-        if orphaned_ids:
-            logger.debug(
-                f"Found {len(orphaned_ids)} orphaned tool_use IDs in summaries: {orphaned_ids}"
-            )
-
-        return orphaned_ids
 
     def process_tool_result(
         self, tool_name: str, tool_call_id: str, result: str, context: str = ""
@@ -509,11 +470,7 @@ class MemoryManager:
         for msg in self.system_messages:
             total += self.token_tracker.count_message_tokens(msg, provider, model)
 
-        # Count summaries
-        for summary in self.summaries:
-            total += summary.compressed_tokens
-
-        # Count short-term messages
+        # Count short-term messages (includes summary messages)
         for msg in self.short_term.get_messages():
             total += self.token_tracker.count_message_tokens(msg, provider, model)
 
@@ -535,9 +492,7 @@ class MemoryManager:
             "net_savings": self.token_tracker.compression_savings
             - self.token_tracker.compression_cost,
             "short_term_count": self.short_term.count(),
-            "summary_count": len(self.summaries),
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
-            "budget_status": self.token_tracker.get_budget_status(Config.MEMORY_MAX_CONTEXT_TOKENS),
         }
 
     def save_memory(self):
@@ -545,8 +500,7 @@ class MemoryManager:
 
         This saves the complete memory state including:
         - System messages
-        - Short-term messages
-        - Summaries
+        - Short-term messages (which includes summary messages after compression)
 
         Call this method after completing a task or at key checkpoints.
         """
@@ -558,7 +512,7 @@ class MemoryManager:
         messages = self.short_term.get_messages()
 
         # Skip saving if there are no messages (empty conversation)
-        if not messages and not self.system_messages and not self.summaries:
+        if not messages and not self.system_messages:
             logger.debug(f"Skipping save_memory: no messages to save for session {self.session_id}")
             return
 
@@ -566,14 +520,13 @@ class MemoryManager:
             session_id=self.session_id,
             system_messages=self.system_messages,
             messages=messages,
-            summaries=self.summaries,
+            summaries=[],  # Summaries are now part of messages
         )
         logger.info(f"Saved memory state for session {self.session_id}")
 
     def reset(self):
         """Reset memory manager state."""
         self.short_term.clear()
-        self.summaries.clear()
         self.system_messages.clear()
         self.token_tracker.reset()
         self.current_tokens = 0

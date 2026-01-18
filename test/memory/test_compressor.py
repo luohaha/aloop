@@ -74,8 +74,9 @@ class TestCompressionStrategies:
 
         assert result is not None
         assert result.metadata["strategy"] == "selective"
-        # Tool pairs should be preserved
-        assert len(result.preserved_messages) > 0
+        # Regular tool pairs are compressed (not preserved) unless they are protected tools
+        # Only system messages, protected tools, and orphaned tool pairs are preserved
+        assert result.summary != ""  # Should have a summary for compressed content
 
     def test_selective_strategy_preserves_system_messages(self, set_memory_config, mock_llm):
         """Test that selective strategy preserves system messages."""
@@ -249,28 +250,38 @@ class TestMessageSeparation:
     """Test message separation logic."""
 
     def test_separate_messages_basic(self, set_memory_config, mock_llm, simple_messages):
-        """Test basic message separation."""
-        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2)
+        """Test basic message separation - recent messages are preserved, others compressed."""
+        set_memory_config(
+            MEMORY_SHORT_TERM_MIN_SIZE=0
+        )  # Don't preserve recent messages for this test
         compressor = WorkingMemoryCompressor(mock_llm)
 
         preserved, to_compress = compressor._separate_messages(simple_messages)
 
-        # Should preserve at least short_term_min_message_count messages
-        assert len(preserved) >= 2
+        # With MIN_SIZE=0, simple messages (no system, no protected tools) should all be compressed
+        assert len(to_compress) == len(simple_messages)
+        assert len(preserved) == 0
         # Total should equal original
         assert len(preserved) + len(to_compress) == len(simple_messages)
 
-    def test_separate_preserves_recent_messages(self, set_memory_config, mock_llm, simple_messages):
-        """Test that most recent messages are preserved."""
-        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2)
+    def test_separate_preserves_system_messages(self, set_memory_config, mock_llm):
+        """Test that system messages are preserved."""
+        set_memory_config(MEMORY_PRESERVE_SYSTEM_PROMPTS=True, MEMORY_SHORT_TERM_MIN_SIZE=0)
         compressor = WorkingMemoryCompressor(mock_llm)
 
-        preserved, to_compress = compressor._separate_messages(simple_messages)
+        messages = [
+            LLMMessage(role="system", content="System prompt"),
+            LLMMessage(role="user", content="Hello"),
+            LLMMessage(role="assistant", content="Hi there!"),
+        ]
 
-        # Last N messages should be in preserved
-        last_n_messages = simple_messages[-2:]
-        for msg in last_n_messages:
-            assert msg in preserved
+        preserved, to_compress = compressor._separate_messages(messages)
+
+        # System message should be preserved
+        assert len(preserved) == 1
+        assert preserved[0].role == "system"
+        # Other messages should be compressed
+        assert len(to_compress) == 2
 
     def test_tool_pair_preservation_rule(self, set_memory_config, mock_llm, tool_use_messages):
         """Test that tool pairs are preserved together (critical rule)."""

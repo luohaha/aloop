@@ -87,8 +87,6 @@ MAX_ITERATIONS=100  # Maximum iteration loops
 
 # Memory Management
 MEMORY_ENABLED=true
-MEMORY_MAX_CONTEXT_TOKENS=100000
-MEMORY_TARGET_TOKENS=30000
 MEMORY_COMPRESSION_THRESHOLD=25000
 MEMORY_SHORT_TERM_SIZE=100
 MEMORY_COMPRESSION_RATIO=0.3
@@ -249,8 +247,6 @@ See the full configuration template in `.env.example`. Key options:
 | `LITELLM_DROP_PARAMS` | Drop unsupported params | `true` |
 | `LITELLM_TIMEOUT` | Request timeout in seconds | `600` |
 | `MAX_ITERATIONS` | Maximum agent iterations | `100` |
-| `MEMORY_MAX_CONTEXT_TOKENS` | Maximum context window | `100000` |
-| `MEMORY_TARGET_TOKENS` | Target working memory size | `30000` |
 | `MEMORY_COMPRESSION_THRESHOLD` | Compress when exceeded | `25000` |
 | `MEMORY_SHORT_TERM_SIZE` | Recent messages to keep | `100` |
 | `RETRY_MAX_ATTEMPTS` | Retry attempts for rate limits | `3` |

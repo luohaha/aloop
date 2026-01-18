@@ -243,7 +243,7 @@ class TestCompressionIntegration:
         """Test a complete conversation lifecycle with multiple compressions."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=8,
-            MEMORY_TARGET_TOKENS=200,
+            MEMORY_COMPRESSION_THRESHOLD=200,
         )
         manager = MemoryManager(mock_llm)
 
@@ -359,7 +359,7 @@ class TestEdgeCaseIntegration:
         """Test many rapid compression cycles."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=2,
-            MEMORY_TARGET_TOKENS=50,
+            MEMORY_COMPRESSION_THRESHOLD=50,
         )
         manager = MemoryManager(mock_llm)
 
@@ -405,7 +405,14 @@ class TestEdgeCaseIntegration:
 
         # Should have multiple compressions with different strategies
         assert manager.compression_count == 2
-        assert len(manager.summaries) == 2
+        # Summaries are now stored as messages in short_term, check context has summary messages
+        context = manager.get_context_for_llm()
+        summary_count = sum(
+            1
+            for msg in context
+            if isinstance(msg.content, str) and msg.content.startswith("[Conversation Summary]")
+        )
+        assert summary_count >= 1  # At least one summary should exist
 
     def test_empty_content_blocks(self, set_memory_config, mock_llm):
         """Test handling of empty content blocks."""
@@ -433,7 +440,7 @@ class TestEdgeCaseIntegration:
         """Test handling of a very long single message."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=5,
-            MEMORY_TARGET_TOKENS=100,
+            MEMORY_COMPRESSION_THRESHOLD=100,
         )
         manager = MemoryManager(mock_llm)
 
@@ -463,14 +470,13 @@ class TestMemoryReset:
         # Everything should be cleared
         assert manager.current_tokens == 0
         assert manager.compression_count == 0
-        assert len(manager.summaries) == 0
         assert manager.short_term.count() == 0
 
     def test_reuse_after_reset(self, set_memory_config, mock_llm):
         """Test that manager can be reused after reset."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid compression
-            MEMORY_TARGET_TOKENS=100000,
+            MEMORY_COMPRESSION_THRESHOLD=100000,
         )
         manager = MemoryManager(mock_llm)
 

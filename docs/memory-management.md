@@ -36,14 +36,8 @@ In your `.env` file:
 # Enable memory management
 MEMORY_ENABLED=true
 
-# Maximum total context size
-MEMORY_MAX_CONTEXT_TOKENS=100000
-
 # Trigger compression at this threshold
 MEMORY_COMPRESSION_THRESHOLD=40000
-
-# Target size after compression
-MEMORY_TARGET_TOKENS=50000
 ```
 
 ### 2. Run Your Agent
@@ -150,14 +144,8 @@ cost = tracker.calculate_cost("claude-3-5-sonnet-20241022")
 # Enable/disable memory (default: true)
 MEMORY_ENABLED=true
 
-# Maximum total context tokens (default: 100000)
-MEMORY_MAX_CONTEXT_TOKENS=100000
-
 # Start compression when context exceeds this (default: 40000)
 MEMORY_COMPRESSION_THRESHOLD=40000
-
-# Target size after compression (default: 50000)
-MEMORY_TARGET_TOKENS=50000
 ```
 
 ### Advanced Settings
@@ -176,8 +164,6 @@ MEMORY_COMPRESSION_STRATEGY=sliding_window
 # Preserve system prompts (default: true)
 MEMORY_PRESERVE_SYSTEM_PROMPTS=true
 
-# Preserve tool calls and results (default: true)
-MEMORY_PRESERVE_TOOL_CALLS=true
 ```
 
 ### Memory Presets
@@ -420,22 +406,6 @@ config = MemoryConfig(
 agent = ReActAgent(llm=llm, tools=tools, memory_config=config)
 ```
 
-### Example 4: Monitor Budget
-
-```python
-memory = MemoryManager(config, llm)
-
-# ... use memory ...
-
-# Check budget status
-budget = memory.token_tracker.get_budget_status(max_tokens=50000)
-
-if budget['over_budget']:
-    print(f"⚠️  Over budget by {budget['total_tokens'] - budget['max_tokens']} tokens")
-else:
-    print(f"✅ {budget['remaining']} tokens remaining ({budget['percentage']:.1f}% used)")
-```
-
 ## How Compression Works
 
 ### Step-by-Step Process
@@ -526,7 +496,7 @@ MEMORY_COMPRESSION_THRESHOLD=40000
 1. Use `selective` strategy instead of `sliding_window`
 2. Increase `MEMORY_SHORT_TERM_SIZE` to preserve more recent messages
 3. Increase `MEMORY_COMPRESSION_RATIO` to keep more content
-4. Set `MEMORY_PRESERVE_TOOL_CALLS=true`
+
 
 ### Issue: High compression cost
 

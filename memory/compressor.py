@@ -1,7 +1,7 @@
 """Memory compression using LLM-based summarization."""
 
 import logging
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from config import Config
 from llm.base import LLMMessage
@@ -48,7 +48,6 @@ Original messages ({count} messages, ~{tokens} tokens):
         messages: List[LLMMessage],
         strategy: str = CompressionStrategy.SLIDING_WINDOW,
         target_tokens: Optional[int] = None,
-        orphaned_tool_use_ids: Optional[Set[str]] = None,
     ) -> CompressedMemory:
         """Compress messages using specified strategy.
 
@@ -56,8 +55,6 @@ Original messages ({count} messages, ~{tokens} tokens):
             messages: List of messages to compress
             strategy: Compression strategy to use
             target_tokens: Target token count for compressed output
-            orphaned_tool_use_ids: Set of tool_use IDs from previous summaries that are
-                                   waiting for tool_result in current messages
 
         Returns:
             CompressedMemory object
@@ -70,14 +67,11 @@ Original messages ({count} messages, ~{tokens} tokens):
             original_tokens = self._estimate_tokens(messages)
             target_tokens = int(original_tokens * Config.MEMORY_COMPRESSION_RATIO)
 
-        if orphaned_tool_use_ids is None:
-            orphaned_tool_use_ids = set()
-
         # Select and apply compression strategy
         if strategy == CompressionStrategy.SLIDING_WINDOW:
             return self._compress_sliding_window(messages, target_tokens)
         elif strategy == CompressionStrategy.SELECTIVE:
-            return self._compress_selective(messages, target_tokens, orphaned_tool_use_ids)
+            return self._compress_selective(messages, target_tokens)
         elif strategy == CompressionStrategy.DELETION:
             return self._compress_deletion(messages)
         else:
@@ -147,7 +141,7 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
 
     def _compress_selective(
-        self, messages: List[LLMMessage], target_tokens: int, orphaned_tool_use_ids: set = None
+        self, messages: List[LLMMessage], target_tokens: int
     ) -> CompressedMemory:
         """Compress using selective preservation strategy.
 
@@ -157,16 +151,12 @@ Original messages ({count} messages, ~{tokens} tokens):
         Args:
             messages: Messages to compress
             target_tokens: Target token count
-            orphaned_tool_use_ids: Set of tool_use IDs from previous summaries
 
         Returns:
             CompressedMemory object
         """
-        if orphaned_tool_use_ids is None:
-            orphaned_tool_use_ids = set()
-
         # Separate preserved vs compressible messages
-        preserved, to_compress = self._separate_messages(messages, orphaned_tool_use_ids)
+        preserved, to_compress = self._separate_messages(messages)
 
         if not to_compress:
             # Nothing to compress
@@ -255,29 +245,25 @@ Original messages ({count} messages, ~{tokens} tokens):
         )
 
     def _separate_messages(
-        self, messages: List[LLMMessage], orphaned_tool_use_ids_from_summaries: set = None
+        self, messages: List[LLMMessage]
     ) -> Tuple[List[LLMMessage], List[LLMMessage]]:
         """Separate messages into preserved and compressible.
 
         Strategy:
         1. Preserve system messages (if configured)
-        2. Preserve protected tools (todo list, etc.) - NEVER compress these
-        3. Use selective strategy for other messages (system decides based on recency, importance)
-        4. **Critical rule**: Tool pairs (tool_use + tool_result) must stay together
+        2. Preserve orphaned tool_use (waiting for tool_result)
+        3. Preserve protected tools (todo list, etc.) - NEVER compress these
+        4. Preserve the most recent N messages (MEMORY_SHORT_TERM_MIN_SIZE)
+        5. **Critical rule**: Tool pairs (tool_use + tool_result) must stay together
            - If one is preserved, the other must be preserved too
            - If one is compressed, the other must be compressed too
-        5. **Critical fix**: Preserve tool_result that match orphaned tool_use from previous summaries
 
         Args:
             messages: All messages
-            orphaned_tool_use_ids_from_summaries: Tool_use IDs from previous summaries waiting for results
 
         Returns:
             Tuple of (preserved, to_compress)
         """
-        if orphaned_tool_use_ids_from_summaries is None:
-            orphaned_tool_use_ids_from_summaries = set()
-
         preserve_indices = set()
 
         # Step 1: Mark system messages for preservation
@@ -293,27 +279,13 @@ Original messages ({count} messages, ~{tokens} tokens):
         for orphan_idx in orphaned_tool_use_indices:
             preserve_indices.add(orphan_idx)
 
-        # Step 2b: CRITICAL FIX - Preserve tool_result that match orphaned tool_use from previous summaries
-        # These results finally arrived and must be preserved to match their tool_use
-        for i, msg in enumerate(messages):
-            if msg.role == "user" and isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict) and block.get("type") == "tool_result":
-                        tool_use_id = block.get("tool_use_id")
-                        if tool_use_id in orphaned_tool_use_ids_from_summaries:
-                            preserve_indices.add(i)
-                            logger.info(
-                                f"Preserving tool_result for orphaned tool_use '{tool_use_id}' from previous summary"
-                            )
-
-        # Step 2c: Mark protected tools for preservation (CRITICAL for stateful tools)
+        # Step 2b: Mark protected tools for preservation (CRITICAL for stateful tools)
         protected_pairs = self._find_protected_tool_pairs(messages, tool_pairs)
         for assistant_idx, user_idx in protected_pairs:
             preserve_indices.add(assistant_idx)
             preserve_indices.add(user_idx)
 
-        # Step 3: Apply selective preservation strategy (keep recent N messages)
-        # Preserve last short_term_min_message_count messages by default (sliding window approach)
+        # Step 3: Preserve the most recent N messages to maintain conversation continuity
         preserve_count = min(Config.MEMORY_SHORT_TERM_MIN_SIZE, len(messages))
         for i in range(len(messages) - preserve_count, len(messages)):
             if i >= 0:
@@ -339,7 +311,8 @@ Original messages ({count} messages, ~{tokens} tokens):
         logger.info(
             f"Separated: {len(preserved)} preserved, {len(to_compress)} to compress "
             f"({len(tool_pairs)} tool pairs, {len(protected_pairs)} protected, "
-            f"{len(orphaned_tool_use_indices)} orphaned tool_use)"
+            f"{len(orphaned_tool_use_indices)} orphaned tool_use, "
+            f"{preserve_count} recent)"
         )
         return preserved, to_compress
 
