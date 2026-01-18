@@ -159,6 +159,7 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
             use_memory=True,
             save_to_memory=True,
             verbose=True,
+            task=task,
         )
 
         self._print_memory_stats()

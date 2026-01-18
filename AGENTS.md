@@ -54,7 +54,7 @@ python main.py --task "Calculate 1+1"
 - `agent/`: agent loops (ReAct, Plan-Execute) and orchestration
 - `tools/`: tool implementations (file ops, shell, web search, etc.)
 - `llm/`: provider adapters + retry logic
-- `memory/`: memory manager, compression, persistence
+- `memory/`: memory manager, compression, persistence, tool result processing
 - `docs/`: user/developer documentation
 - `scripts/`: packaging/publishing scripts
 - `test/`: tests (some require API keys; memory tests are mostly mocked)
@@ -113,6 +113,7 @@ Unified entrypoint: `./scripts/dev.sh build`
 - Packaging & release checklist: `docs/packaging.md`
 - Extending tools/agents: `docs/extending.md`
 - Memory system: `docs/memory-management.md`, `docs/memory_persistence.md`
+- Tool result processing: `docs/tool_result_processing.md`
 - Usage examples: `docs/examples.md`
 
 ## Safety & Secrets
@@ -127,3 +128,4 @@ Unified entrypoint: `./scripts/dev.sh build`
 - If you change configuration/env vars: update `docs/configuration.md` and `.env.example`.
 - If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
 - If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md` / `docs/memory_persistence.md`.
+- If you change tool result processing: add/adjust tests under `test/memory/test_tool_result_processing.py` and update `docs/tool_result_processing.md`.

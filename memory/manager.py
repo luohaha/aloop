@@ -3,13 +3,16 @@
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from config import Config
 from llm.base import LLMMessage
 
 from .compressor import WorkingMemoryCompressor
 from .short_term import ShortTermMemory
 from .store import MemoryStore
 from .token_tracker import TokenTracker
-from .types import CompressedMemory, CompressionStrategy, MemoryConfig
+from .tool_result_processor import ToolResultProcessor
+from .tool_result_store import ToolResultStore
+from .types import CompressedMemory, CompressionStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +25,6 @@ class MemoryManager:
 
     def __init__(
         self,
-        config: MemoryConfig,
         llm: "LiteLLMLLM",
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
@@ -31,31 +33,43 @@ class MemoryManager:
         """Initialize memory manager.
 
         Args:
-            config: Memory configuration
             llm: LLM instance for compression
             store: Optional MemoryStore for persistence (if None, creates default store)
             session_id: Optional session ID (if resuming session)
             db_path: Path to database file (default: data/memory.db)
         """
-        self.config = config
         self.llm = llm
+        self._db_path = db_path
 
         # Always create/use store for persistence
         if store is None:
             store = MemoryStore(db_path=db_path)
         self.store = store
 
-        # Create new session or use existing one
-        if session_id is None:
-            self.session_id = store.create_session()
-            logger.info(f"Created new session: {self.session_id}")
-        else:
+        # Lazy session creation: only create when first message is added
+        # If session_id is provided (resuming), use it immediately
+        if session_id is not None:
             self.session_id = session_id
+            self._session_created = True
+        else:
+            self.session_id = None
+            self._session_created = False
 
-        # Initialize components
-        self.short_term = ShortTermMemory(max_size=config.short_term_message_count)
-        self.compressor = WorkingMemoryCompressor(llm, config)
+        # Initialize components using Config directly
+        self.short_term = ShortTermMemory(max_size=Config.MEMORY_SHORT_TERM_SIZE)
+        self.compressor = WorkingMemoryCompressor(llm)
         self.token_tracker = TokenTracker()
+
+        # Initialize tool result processing components (always enabled)
+        self.tool_result_processor = ToolResultProcessor(
+            storage_threshold=Config.TOOL_RESULT_STORAGE_THRESHOLD,
+            summary_model=Config.TOOL_RESULT_SUMMARY_MODEL,
+        )
+        storage_path = Config.TOOL_RESULT_STORAGE_PATH
+        self.tool_result_store = ToolResultStore(db_path=storage_path)
+        logger.info(
+            f"Tool result processing enabled with external storage: {storage_path or 'in-memory'}"
+        )
 
         # Storage for compressed memories and system messages
         self.summaries: List[CompressedMemory] = []
@@ -95,11 +109,8 @@ class MemoryManager:
         if not session_data:
             raise ValueError(f"Session {session_id} not found")
 
-        # Get config (use loaded config or default)
-        config = session_data["config"] or MemoryConfig()
-
-        # Create manager
-        manager = cls(config=config, llm=llm, store=store, session_id=session_id)
+        # Create manager (config is now read from Config class directly)
+        manager = cls(llm=llm, store=store, session_id=session_id)
 
         # Restore state
         manager.system_messages = session_data["system_messages"]
@@ -122,6 +133,17 @@ class MemoryManager:
 
         return manager
 
+    def _ensure_session(self) -> None:
+        """Lazily create session when first needed.
+
+        This avoids creating empty sessions when MemoryManager is instantiated
+        but no messages are ever added (e.g., user exits before running any task).
+        """
+        if not self._session_created:
+            self.session_id = self.store.create_session()
+            self._session_created = True
+            logger.info(f"Created new session: {self.session_id}")
+
     def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
 
@@ -130,6 +152,9 @@ class MemoryManager:
             actual_tokens: Optional dict with actual token counts from LLM response
                           Format: {"input": int, "output": int}
         """
+        # Ensure session exists before adding messages
+        self._ensure_session()
+
         # Track system messages separately
         if message.role == "system":
             self.system_messages.append(message)
@@ -164,7 +189,7 @@ class MemoryManager:
         # Log memory state for debugging
         logger.debug(
             f"Memory state: {self.current_tokens} tokens, "
-            f"{self.short_term.count()}/{self.config.short_term_message_count} messages, "
+            f"{self.short_term.count()}/{Config.MEMORY_SHORT_TERM_SIZE} messages, "
             f"full={self.short_term.is_full()}"
         )
 
@@ -178,8 +203,8 @@ class MemoryManager:
             # Log why compression was NOT triggered
             logger.debug(
                 f"Compression check: current={self.current_tokens}, "
-                f"threshold={self.config.compression_threshold}, "
-                f"target={self.config.target_working_memory_tokens}, "
+                f"threshold={Config.MEMORY_COMPRESSION_THRESHOLD}, "
+                f"target={Config.MEMORY_TARGET_TOKENS}, "
                 f"short_term_full={self.short_term.is_full()}"
             )
 
@@ -292,12 +317,15 @@ class MemoryManager:
         Returns:
             Tuple of (should_compress, reason)
         """
-        if not self.config.enable_compression:
+        if not Config.MEMORY_ENABLED:
             return False, "compression_disabled"
 
         # Hard limit: must compress
-        if self.current_tokens > self.config.compression_threshold:
-            return True, f"hard_limit ({self.current_tokens} > {self.config.compression_threshold})"
+        if self.current_tokens > Config.MEMORY_COMPRESSION_THRESHOLD:
+            return (
+                True,
+                f"hard_limit ({self.current_tokens} > {Config.MEMORY_COMPRESSION_THRESHOLD})",
+            )
 
         # CRITICAL: Compress when short-term memory is full to prevent eviction
         # If we don't compress, the next message will cause deque to evict the oldest message,
@@ -305,15 +333,15 @@ class MemoryManager:
         if self.short_term.is_full():
             return (
                 True,
-                f"short_term_full ({self.short_term.count()}/{self.config.short_term_message_count} messages, "
+                f"short_term_full ({self.short_term.count()}/{Config.MEMORY_SHORT_TERM_SIZE} messages, "
                 f"current tokens: {self.current_tokens})",
             )
 
         # Soft limit: compress if over target token count
-        if self.current_tokens > self.config.target_working_memory_tokens:
+        if self.current_tokens > Config.MEMORY_TARGET_TOKENS:
             return (
                 True,
-                f"soft_limit ({self.current_tokens} > {self.config.target_working_memory_tokens})",
+                f"soft_limit ({self.current_tokens} > {Config.MEMORY_TARGET_TOKENS})",
             )
 
         return False, None
@@ -365,7 +393,7 @@ class MemoryManager:
             Target token count
         """
         original_tokens = self.current_tokens
-        target = int(original_tokens * self.config.compression_ratio)
+        target = int(original_tokens * Config.MEMORY_COMPRESSION_RATIO)
         return max(target, 500)  # Minimum 500 tokens for summary
 
     def _get_orphaned_tool_use_ids_from_summaries(self) -> set:
@@ -403,6 +431,68 @@ class MemoryManager:
             )
 
         return orphaned_ids
+
+    def process_tool_result(
+        self, tool_name: str, tool_call_id: str, result: str, context: str = ""
+    ) -> str:
+        """Process a tool result with intelligent summarization and optional external storage.
+
+        Args:
+            tool_name: Name of the tool that produced the result
+            tool_call_id: ID of the tool call
+            result: Raw tool result string
+            context: Optional context about the task
+
+        Returns:
+            Processed result (may be summarized or reference to external storage)
+        """
+        # Process the result
+        processed_result, should_store_externally = self.tool_result_processor.process_result(
+            tool_name=tool_name, result=result, context=context
+        )
+
+        # Store externally if processor recommends it (threshold already checked in processor)
+        if should_store_externally:
+            result_tokens = self.tool_result_processor.estimate_tokens(result)
+            logger.info(
+                f"Storing large tool result externally: {tool_name} "
+                f"({result_tokens} tokens > {Config.TOOL_RESULT_STORAGE_THRESHOLD})"
+            )
+
+            # Store full result
+            result_id = self.tool_result_store.store_result(
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                content=result,
+                summary=processed_result,
+                token_count=result_tokens,
+            )
+
+            # Return reference instead of full content
+            return self.tool_result_store.format_reference(result_id, include_summary=True)
+
+        return processed_result
+
+    def retrieve_tool_result(self, result_id: str) -> Optional[str]:
+        """Retrieve a tool result from external storage.
+
+        Args:
+            result_id: ID returned by process_tool_result
+
+        Returns:
+            Full tool result content, or None if not found
+        """
+        return self.tool_result_store.retrieve_result(result_id)
+
+    def get_tool_result_stats(self) -> Dict[str, Any]:
+        """Get statistics about stored tool results.
+
+        Returns:
+            Dictionary with statistics
+        """
+        stats = self.tool_result_store.get_stats()
+        stats["enabled"] = True
+        return stats
 
     def _recalculate_current_tokens(self) -> int:
         """Recalculate current token count from scratch.
@@ -447,7 +537,7 @@ class MemoryManager:
             "short_term_count": self.short_term.count(),
             "summary_count": len(self.summaries),
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
-            "budget_status": self.token_tracker.get_budget_status(self.config.max_context_tokens),
+            "budget_status": self.token_tracker.get_budget_status(Config.MEMORY_MAX_CONTEXT_TOKENS),
         }
 
     def save_memory(self):
@@ -460,7 +550,9 @@ class MemoryManager:
 
         Call this method after completing a task or at key checkpoints.
         """
-        if not self.store or not self.session_id:
+        # Skip if no session was created (no messages were ever added)
+        if not self.store or not self._session_created or not self.session_id:
+            logger.debug("Skipping save_memory: no session created")
             return
 
         messages = self.short_term.get_messages()

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
 from llm import LLMMessage, LLMResponse, ToolResult
-from memory import MemoryConfig, MemoryManager
+from memory import MemoryManager
 from tools.base import BaseTool
 from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
@@ -26,7 +26,6 @@ class BaseAgent(ABC):
         llm: "LiteLLMLLM",
         tools: List[BaseTool],
         max_iterations: int = 10,
-        memory_config: Optional[MemoryConfig] = None,
     ):
         """Initialize the agent.
 
@@ -34,7 +33,6 @@ class BaseAgent(ABC):
             llm: LLM instance to use
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
-            memory_config: Optional memory configuration (None = use defaults)
         """
         self.llm = llm
         self.max_iterations = max_iterations
@@ -53,10 +51,8 @@ class BaseAgent(ABC):
 
         self.tool_executor = ToolExecutor(tools)
 
-        # Initialize memory manager
-        if memory_config is None:
-            memory_config = MemoryConfig()
-        self.memory = MemoryManager(memory_config, llm)
+        # Initialize memory manager (uses Config directly)
+        self.memory = MemoryManager(llm)
 
     @abstractmethod
     def run(self, task: str) -> str:
@@ -97,6 +93,7 @@ class BaseAgent(ABC):
         use_memory: bool = True,
         save_to_memory: bool = True,
         verbose: bool = True,
+        task: str = "",
     ) -> str:
         """Execute a ReAct (Reasoning + Acting) loop.
 
@@ -111,6 +108,7 @@ class BaseAgent(ABC):
             use_memory: If True, use self.memory for context; if False, use local messages list
             save_to_memory: If True, save messages to self.memory (only when use_memory=True)
             verbose: If True, print iteration and tool call information
+            task: Optional task description for context in tool result processing
 
         Returns:
             Final answer as a string
@@ -181,19 +179,29 @@ class BaseAgent(ABC):
 
                     result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
 
-                    # Truncate overly large results to prevent context overflow
-                    MAX_TOOL_RESULT_LENGTH = 8000  # characters
-                    if len(result) > MAX_TOOL_RESULT_LENGTH:
-                        truncated_length = MAX_TOOL_RESULT_LENGTH
-                        result = (
-                            result[:truncated_length]
-                            + f"\n\n[... Output truncated. Showing first {truncated_length} characters of {len(result)} total. "
-                            f"Use grep_content or glob_files for more targeted searches instead of reading large files.]"
+                    # Process tool result with intelligent summarization if memory is enabled
+                    if use_memory and self.memory:
+                        result = self.memory.process_tool_result(
+                            tool_name=tc.name,
+                            tool_call_id=tc.id,
+                            result=result,
+                            context=task,  # Pass task as context for intelligent summarization
                         )
-                        if verbose:
-                            terminal_ui.print_tool_result(result, truncated=True)
-                    elif verbose:
-                        terminal_ui.print_tool_result(result, truncated=False)
+                    else:
+                        # Fallback: simple truncation for non-memory mode
+                        MAX_TOOL_RESULT_LENGTH = 8000  # characters
+                        if len(result) > MAX_TOOL_RESULT_LENGTH:
+                            truncated_length = MAX_TOOL_RESULT_LENGTH
+                            result = (
+                                result[:truncated_length]
+                                + f"\n\n[... Output truncated. Showing first {truncated_length} characters of {len(result)} total. "
+                                f"Use grep_content or glob_files for more targeted searches instead of reading large files.]"
+                            )
+
+                    if verbose:
+                        # Check if result was truncated/processed
+                        truncated = "[... " in result or "[Tool Result #" in result
+                        terminal_ui.print_tool_result(result, truncated=truncated)
 
                     # Log result (truncated)
                     logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")

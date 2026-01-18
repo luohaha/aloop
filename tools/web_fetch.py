@@ -21,7 +21,6 @@ MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 120
 MAX_REDIRECTS = 5
-MAX_OUTPUT_CHARS = 6000
 ALLOWED_PORTS = {80, 443}
 BLOCKED_HOSTS = {"localhost"}
 BLOCKED_SUFFIXES = (".local",)
@@ -140,7 +139,6 @@ class WebFetchTool(BaseTool):
         content = content_bytes.decode(encoding, errors="replace")
 
         output, title = self._convert_content(content, content_type, format, url)
-        output, output_truncated, output_total_chars = self._truncate_output(output)
 
         metadata = {
             "requested_url": url,
@@ -149,10 +147,9 @@ class WebFetchTool(BaseTool):
             "content_type": content_type_header,
             "charset": encoding,
             "fetched_bytes": len(content_bytes),
+            "output_chars": len(output),
             "redirects": redirects,
             "truncated": len(content_bytes) >= MAX_RESPONSE_BYTES,
-            "output_truncated": output_truncated,
-            "output_total_chars": output_total_chars,
             "duration_ms": int((time.time() - start_time) * 1000),
         }
 
@@ -412,11 +409,3 @@ class WebFetchTool(BaseTool):
             node.drop_tree()
         text = tree.text_content()
         return " ".join(text.split()), title
-
-    def _truncate_output(self, output: str) -> Tuple[str, bool, int]:
-        total = len(output)
-        if total <= MAX_OUTPUT_CHARS:
-            return output, False, total
-        suffix = "\n\n[... output truncated ...]"
-        cutoff = max(0, MAX_OUTPUT_CHARS - len(suffix))
-        return output[:cutoff] + suffix, True, total
