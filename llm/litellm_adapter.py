@@ -219,17 +219,15 @@ class LiteLLMAdapter:
         Returns:
             List of tool messages in OpenAI format, or empty list if not tool results
         """
-        tool_messages = []
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_result":
-                tool_messages.append(
-                    {
-                        "role": "tool",
-                        "content": block.get("content", ""),
-                        "tool_call_id": block.get("tool_use_id", ""),
-                    }
-                )
-        return tool_messages
+        return [
+            {
+                "role": "tool",
+                "content": block.get("content", ""),
+                "tool_call_id": block.get("tool_use_id", ""),
+            }
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
 
     def _clean_message(self, message) -> None:
         """Clean up unnecessary fields from message to reduce memory usage.
@@ -254,19 +252,17 @@ class LiteLLMAdapter:
 
     def _convert_tools(self, tools: List[Dict[str, Any]]) -> List[Dict]:
         """Convert Anthropic tool format to OpenAI format."""
-        openai_tools = []
-        for tool in tools:
-            openai_tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool["name"],
-                        "description": tool["description"],
-                        "parameters": tool["input_schema"],
-                    },
-                }
-            )
-        return openai_tools
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"],
+                },
+            }
+            for tool in tools
+        ]
 
     def _convert_response(self, response) -> LLMResponse:
         """Convert LiteLLM response to LLMResponse with normalized content.
@@ -431,17 +427,15 @@ class LiteLLMAdapter:
         Returns:
             List of LLMMessages with role="tool"
         """
-        messages = []
-        for result in results:
-            messages.append(
-                LLMMessage(
-                    role="tool",
-                    content=result.content,
-                    tool_call_id=result.tool_call_id,
-                    name=result.name if hasattr(result, "name") else None,
-                )
+        return [
+            LLMMessage(
+                role="tool",
+                content=result.content,
+                tool_call_id=result.tool_call_id,
+                name=result.name if hasattr(result, "name") else None,
             )
-        return messages
+            for result in results
+        ]
 
     @property
     def supports_tools(self) -> bool:

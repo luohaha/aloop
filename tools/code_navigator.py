@@ -12,6 +12,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
+import aiofiles
+
 from tools.base import BaseTool
 
 # Try to import tree-sitter-languages for multi-language support
@@ -243,13 +245,13 @@ WHEN TO USE GREP INSTEAD:
                 return f"Error: Path does not exist: {path}"
 
             if search_type == "find_function":
-                return self._find_function(target, base_path, language)
+                return await self._find_function(target, base_path, language)
             elif search_type == "find_class":
-                return self._find_class(target, base_path, language)
+                return await self._find_class(target, base_path, language)
             elif search_type == "show_structure":
-                return self._show_structure(target)
+                return await self._show_structure(target)
             elif search_type == "find_usages":
-                return self._find_usages(target, base_path, language)
+                return await self._find_usages(target, base_path, language)
             else:
                 return f"Error: Unknown search_type '{search_type}'"
 
@@ -292,7 +294,9 @@ WHEN TO USE GREP INSTEAD:
 
         return sorted(result)
 
-    def _find_function_with_tree_sitter(self, name: str, file_path: Path, lang: str) -> List[Dict]:
+    async def _find_function_with_tree_sitter(
+        self, name: str, file_path: Path, lang: str
+    ) -> List[Dict]:
         """Find functions using tree-sitter."""
         results = []
 
@@ -303,7 +307,8 @@ WHEN TO USE GREP INSTEAD:
             parser, language = self._get_tree_sitter_parser_and_language(lang)
             query = language.query(FUNCTION_QUERIES[lang])
 
-            code = file_path.read_bytes()
+            async with aiofiles.open(file_path, "rb") as f:
+                code = await f.read()
             tree = parser.parse(code)
             captures = query.captures(tree.root_node)
 
@@ -350,7 +355,9 @@ WHEN TO USE GREP INSTEAD:
 
         return results
 
-    def _find_class_with_tree_sitter(self, name: str, file_path: Path, lang: str) -> List[Dict]:
+    async def _find_class_with_tree_sitter(
+        self, name: str, file_path: Path, lang: str
+    ) -> List[Dict]:
         """Find classes using tree-sitter."""
         results = []
 
@@ -361,7 +368,8 @@ WHEN TO USE GREP INSTEAD:
             parser, language = self._get_tree_sitter_parser_and_language(lang)
             query = language.query(CLASS_QUERIES[lang])
 
-            code = file_path.read_bytes()
+            async with aiofiles.open(file_path, "rb") as f:
+                code = await f.read()
             tree = parser.parse(code)
             captures = query.captures(tree.root_node)
 
@@ -405,7 +413,9 @@ WHEN TO USE GREP INSTEAD:
 
         return results
 
-    def _find_function(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
+    async def _find_function(
+        self, name: str, base_path: Path, language: Optional[str] = None
+    ) -> str:
         """Find all function definitions matching the name."""
         results: List[Dict] = []
 
@@ -417,7 +427,8 @@ WHEN TO USE GREP INSTEAD:
             # Use Python AST for Python files (more detailed output)
             if lang == "python":
                 try:
-                    content = source_file.read_text(encoding="utf-8")
+                    async with aiofiles.open(source_file, encoding="utf-8") as f:
+                        content = await f.read()
                     tree = ast.parse(content, filename=str(source_file))
 
                     for node in ast.walk(tree):
@@ -461,7 +472,7 @@ WHEN TO USE GREP INSTEAD:
                 except ValueError:
                     rel_path = str(source_file)
 
-                ts_results = self._find_function_with_tree_sitter(name, source_file, lang)
+                ts_results = await self._find_function_with_tree_sitter(name, source_file, lang)
                 for r in ts_results:
                     r["file"] = rel_path
                     results.append(r)
@@ -484,7 +495,7 @@ WHEN TO USE GREP INSTEAD:
 
         return "\n".join(output_parts)
 
-    def _find_class(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
+    async def _find_class(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
         """Find all class definitions matching the name."""
         results: List[Dict] = []
 
@@ -496,16 +507,16 @@ WHEN TO USE GREP INSTEAD:
             # Use Python AST for Python files (more detailed output)
             if lang == "python":
                 try:
-                    content = source_file.read_text(encoding="utf-8")
+                    async with aiofiles.open(source_file, encoding="utf-8") as f:
+                        content = await f.read()
                     tree = ast.parse(content, filename=str(source_file))
 
                     for node in ast.walk(tree):
                         if isinstance(node, ast.ClassDef) and node.name == name:
                             bases = [self._format_base_class(b) for b in node.bases]
-                            methods = []
-                            for item in node.body:
-                                if isinstance(item, ast.FunctionDef):
-                                    methods.append(item.name)
+                            methods = [
+                                item.name for item in node.body if isinstance(item, ast.FunctionDef)
+                            ]
 
                             docstring = ast.get_docstring(node)
                             decorators = [self._format_decorator(d) for d in node.decorator_list]
@@ -537,7 +548,7 @@ WHEN TO USE GREP INSTEAD:
                 except ValueError:
                     rel_path = str(source_file)
 
-                ts_results = self._find_class_with_tree_sitter(name, source_file, lang)
+                ts_results = await self._find_class_with_tree_sitter(name, source_file, lang)
                 for r in ts_results:
                     r["file"] = rel_path
                     results.append(r)
@@ -571,7 +582,7 @@ WHEN TO USE GREP INSTEAD:
 
         return "\n".join(output_parts)
 
-    def _show_structure(self, file_path: str) -> str:
+    async def _show_structure(self, file_path: str) -> str:
         """Show the structure of a specific file."""
         path = Path(file_path)
         if not path.exists():
@@ -581,16 +592,17 @@ WHEN TO USE GREP INSTEAD:
 
         # Use Python AST for Python files
         if lang == "python":
-            return self._show_structure_python(path)
+            return await self._show_structure_python(path)
         elif self._tree_sitter_available and lang:
-            return self._show_structure_tree_sitter(path, lang)
+            return await self._show_structure_tree_sitter(path, lang)
         else:
             return f"Error: Unsupported file type or tree-sitter not available for: {file_path}"
 
-    def _show_structure_python(self, path: Path) -> str:
+    async def _show_structure_python(self, path: Path) -> str:
         """Show structure of Python file using AST."""
         try:
-            content = path.read_text(encoding="utf-8")
+            async with aiofiles.open(path, encoding="utf-8") as f:
+                content = await f.read()
             tree = ast.parse(content, filename=str(path))
 
             structure = {
@@ -654,12 +666,13 @@ WHEN TO USE GREP INSTEAD:
         except Exception as e:
             return f"Error parsing {path}: {str(e)}"
 
-    def _show_structure_tree_sitter(self, path: Path, lang: str) -> str:
+    async def _show_structure_tree_sitter(self, path: Path, lang: str) -> str:
         """Show structure of file using tree-sitter."""
         try:
             parser, language = self._get_tree_sitter_parser_and_language(lang)
 
-            code = path.read_bytes()
+            async with aiofiles.open(path, "rb") as f:
+                code = await f.read()
             tree = parser.parse(code)
             lines = code.decode("utf-8", errors="replace").splitlines()
 
@@ -780,7 +793,7 @@ WHEN TO USE GREP INSTEAD:
 
         return "\n".join(output_parts)
 
-    def _find_usages(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
+    async def _find_usages(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
         """Find where a function or class is used (called)."""
         results = []
 
@@ -792,7 +805,8 @@ WHEN TO USE GREP INSTEAD:
             # Use Python AST for Python files
             if lang == "python":
                 try:
-                    content = source_file.read_text(encoding="utf-8")
+                    async with aiofiles.open(source_file, encoding="utf-8") as f:
+                        content = await f.read()
                     lines = content.splitlines()
                     tree = ast.parse(content, filename=str(source_file))
 
@@ -844,7 +858,8 @@ WHEN TO USE GREP INSTEAD:
             # For other languages, use simple text search for now
             elif self._tree_sitter_available:
                 try:
-                    content = source_file.read_text(encoding="utf-8")
+                    async with aiofiles.open(source_file, encoding="utf-8") as f:
+                        content = await f.read()
                     lines = content.splitlines()
 
                     for i, line in enumerate(lines):

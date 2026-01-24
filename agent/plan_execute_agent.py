@@ -208,12 +208,16 @@ class PlanExecuteAgent(BaseAgent):
         """
         results = {}
         for aspect, description in tasks:
-            try:
-                result = await self._run_single_exploration(aspect, description, main_task)
+            result_list = await asyncio.gather(
+                self._run_single_exploration(aspect, description, main_task),
+                return_exceptions=True,
+            )
+            result = result_list[0]
+            if isinstance(result, Exception):
+                logger.warning(f"Exploration {aspect} failed: {result}")
+                results[aspect] = {"error": str(result)}
+            else:
                 results[aspect] = result
-            except Exception as e:
-                logger.warning(f"Exploration {aspect} failed: {e}")
-                results[aspect] = {"error": str(e)}
         return results
 
     async def _run_single_exploration(self, aspect: str, description: str, main_task: str) -> dict:
@@ -255,7 +259,7 @@ class PlanExecuteAgent(BaseAgent):
     def _extract_files(self, results: Dict[str, dict]) -> List[str]:
         """Extract discovered file paths from exploration results."""
         files = []
-        for aspect, data in results.items():
+        for data in results.values():
             if isinstance(data, dict) and "findings" in data:
                 # Simple extraction - look for file paths in findings
                 findings = data["findings"]
@@ -632,8 +636,7 @@ class PlanExecuteAgent(BaseAgent):
 
         tasks_list = []
         async with asyncio.TaskGroup() as tg:
-            for step in steps:
-                tasks_list.append(tg.create_task(run_step(step)))
+            tasks_list = [tg.create_task(run_step(step)) for step in steps]
 
         return [task.result() for task in tasks_list]
 

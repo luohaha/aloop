@@ -1,5 +1,6 @@
 """Unit tests for MemoryStore (database persistence)."""
 
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -21,10 +22,8 @@ def temp_db():
     yield path
 
     # Cleanup
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(path)
-    except OSError:
-        pass
 
 
 @pytest.fixture
@@ -363,7 +362,7 @@ class TestSessionRetrieval:
     async def test_list_sessions_with_limit(self, store):
         """Test listing sessions with limit."""
         # Create multiple sessions
-        for i in range(10):
+        for _ in range(10):
             await store.create_session()
 
         # List with limit

@@ -41,10 +41,7 @@ class BaseAgent(ABC):
         self.todo_list = TodoList()
 
         # Add todo tool to the tools list if enabled
-        if tools is None:
-            tools = []
-        else:
-            tools = list(tools)  # Make a copy to avoid modifying original
+        tools = [] if tools is None else list(tools)  # Make a copy to avoid modifying original
 
         todo_tool = TodoTool(self.todo_list)
         tools.append(todo_tool)
@@ -118,10 +115,7 @@ class BaseAgent(ABC):
                 terminal_ui.print_iteration(iteration + 1, max_iterations)
 
             # Get context (either from memory or local messages)
-            if use_memory:
-                context = self.memory.get_context_for_llm()
-            else:
-                context = messages
+            context = self.memory.get_context_for_llm() if use_memory else messages
 
             # Call LLM with tools
             response = await self._call_llm(messages=context, tools=tools)

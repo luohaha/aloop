@@ -7,10 +7,11 @@ This tool provides advanced editing features beyond the basic EditTool:
 - Rollback: Can revert changes if editing fails
 """
 
-import shutil
 from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+import aiofiles
 
 from tools.base import BaseTool
 
@@ -150,11 +151,12 @@ IMPORTANT:
                 return f"Error: File does not exist: {file_path}"
 
             # Read original content
-            original_content = path.read_text(encoding="utf-8")
+            async with aiofiles.open(path, encoding="utf-8") as f:
+                original_content = await f.read()
 
             # Execute the appropriate edit mode
             if mode == "diff_replace":
-                result = self._diff_replace(
+                result = await self._diff_replace(
                     path,
                     original_content,
                     old_code,
@@ -165,7 +167,7 @@ IMPORTANT:
                     show_diff,
                 )
             elif mode == "smart_insert":
-                result = self._smart_insert(
+                result = await self._smart_insert(
                     path,
                     original_content,
                     anchor,
@@ -176,7 +178,7 @@ IMPORTANT:
                     show_diff,
                 )
             elif mode == "block_edit":
-                result = self._block_edit(
+                result = await self._block_edit(
                     path,
                     original_content,
                     start_line,
@@ -194,7 +196,7 @@ IMPORTANT:
         except Exception as e:
             return f"Error executing smart_edit: {str(e)}"
 
-    def _diff_replace(
+    async def _diff_replace(
         self,
         path: Path,
         original_content: str,
@@ -249,25 +251,27 @@ IMPORTANT:
             return "\n".join(output_parts)
 
         # Create backup if requested
+        backup_path = None
         if create_backup:
-            backup_path = self._create_backup(path)
+            backup_path = await self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
         # Apply changes
         try:
-            path.write_text(new_content, encoding="utf-8")
+            async with aiofiles.open(path, "w", encoding="utf-8") as f:
+                await f.write(new_content)
             output_parts.append(f"✓ Successfully edited {path}")
             return "\n".join(output_parts)
         except Exception as e:
             # Rollback if writing failed
-            if create_backup and backup_path.exists():
-                shutil.copy2(backup_path, path)
+            if create_backup and backup_path and backup_path.exists():
+                await self._copy_file(backup_path, path)
                 output_parts.append(f"✗ Edit failed, restored from backup: {e}")
             else:
                 output_parts.append(f"✗ Edit failed: {e}")
             return "\n".join(output_parts)
 
-    def _smart_insert(
+    async def _smart_insert(
         self,
         path: Path,
         original_content: str,
@@ -319,15 +323,17 @@ IMPORTANT:
             return "\n".join(output_parts)
 
         # Create backup and apply
+        backup_path = None
         if create_backup:
-            backup_path = self._create_backup(path)
+            backup_path = await self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
-        path.write_text(new_content, encoding="utf-8")
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(new_content)
         output_parts.append(f"✓ Successfully inserted code {position} anchor in {path}")
         return "\n".join(output_parts)
 
-    def _block_edit(
+    async def _block_edit(
         self,
         path: Path,
         original_content: str,
@@ -368,11 +374,13 @@ IMPORTANT:
             return "\n".join(output_parts)
 
         # Create backup and apply
+        backup_path = None
         if create_backup:
-            backup_path = self._create_backup(path)
+            backup_path = await self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
-        path.write_text(new_content, encoding="utf-8")
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(new_content)
         output_parts.append(f"✓ Successfully edited lines {start_line}-{end_line} in {path}")
         return "\n".join(output_parts)
 
@@ -446,8 +454,17 @@ IMPORTANT:
 
         return "".join(diff_lines)
 
-    def _create_backup(self, path: Path) -> Path:
+    async def _create_backup(self, path: Path) -> Path:
         """Create a backup file with .bak extension."""
         backup_path = path.with_suffix(path.suffix + ".bak")
-        shutil.copy2(path, backup_path)
+        await self._copy_file(path, backup_path)
         return backup_path
+
+    async def _copy_file(self, source: Path, destination: Path) -> None:
+        """Copy a file using async IO."""
+        async with aiofiles.open(source, "rb") as src, aiofiles.open(destination, "wb") as dst:
+            while True:
+                chunk = await src.read(1024 * 1024)
+                if not chunk:
+                    break
+                await dst.write(chunk)

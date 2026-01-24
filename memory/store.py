@@ -3,11 +3,12 @@
 import asyncio
 import json
 import logging
+import os
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import aiofiles.os
 import aiosqlite
 
 from llm.message_types import LLMMessage
@@ -36,8 +37,6 @@ class MemoryStore:
         self._db_initialized = False
         self._init_lock = asyncio.Lock()
 
-        # Ensure directory exists
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"MemoryStore initialized at {db_path}")
 
     async def _ensure_db(self) -> None:
@@ -46,6 +45,7 @@ class MemoryStore:
         async with self._init_lock:
             if self._db_initialized:
                 return
+            await aiofiles.os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
             await self._init_db()
             self._db_initialized = True
 
@@ -108,10 +108,7 @@ class MemoryStore:
         """
         await self._ensure_db()
         async with aiosqlite.connect(self.db_path) as conn:
-            if message.role == "system":
-                field = "system_messages"
-            else:
-                field = "messages"
+            field = "system_messages" if message.role == "system" else "messages"
 
             async with conn.execute(
                 f"SELECT {field} FROM sessions WHERE id = ?", (session_id,)

@@ -57,7 +57,7 @@ class FileReadTool(BaseTool):
                     f"or use grep_content to search for specific content."
                 )
 
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(file_path, encoding="utf-8") as f:
                 if limit is None:
                     return await f.read()
                 # Pagination mode

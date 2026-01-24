@@ -104,7 +104,7 @@ Here's a more complex example that makes HTTP requests:
 # tools/api_client.py
 from .base import BaseTool
 from typing import Dict, Any
-import requests
+import httpx
 
 class APIClientTool(BaseTool):
     """Tool for making HTTP API requests."""
@@ -145,21 +145,22 @@ class APIClientTool(BaseTool):
                 headers: Dict = None, body: Dict = None) -> str:
         """Make an HTTP request."""
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=headers or {},
-                json=body
-            )
-            response.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                response = await client.request(
+                    method=method,
+                    url=url,
+                    headers=headers or {},
+                    json=body,
+                )
+                response.raise_for_status()
 
             return f"Status: {response.status_code}\n\n{response.text}"
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             return f"Error making request: {str(e)}"
 ```
 
-**Note**: During the asyncio migration, prefer an async HTTP client for new tools, or ensure any blocking
-HTTP is executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
+**Note**: Use an async HTTP client for tools (e.g., `httpx.AsyncClient`). Avoid `requests` in runtime paths
+unless wrapped behind an async boundary (see `rfc/003-asyncio-migration.md`).
 
 ### Example: Database Tool
 

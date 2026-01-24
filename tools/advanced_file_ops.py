@@ -1,6 +1,7 @@
 """Advanced file operation tools inspired by Claude Code."""
 
 import asyncio
+import contextlib
 import re
 import shutil
 from pathlib import Path
@@ -176,7 +177,7 @@ Examples:
                 max_count=max_count,
             )
         else:
-            return self._execute_python_fallback(
+            return await self._execute_python_fallback(
                 pattern=pattern,
                 path=path,
                 mode=mode,
@@ -292,7 +293,7 @@ Examples:
         except Exception as e:
             return f"Error executing ripgrep: {str(e)}"
 
-    def _execute_python_fallback(
+    async def _execute_python_fallback(
         self,
         pattern: str,
         path: str,
@@ -345,11 +346,9 @@ Examples:
             # Pre-compute set of excluded files
             excluded_files = set()
             for exclude_pattern in excludes:
-                try:
+                with contextlib.suppress(Exception):
                     excluded_files.update(base_path.glob(exclude_pattern))
                     excluded_files.update(base_path.rglob(exclude_pattern))
-                except Exception:
-                    pass
 
             # Also exclude common directories
             exclude_dirs = {
@@ -385,7 +384,8 @@ Examples:
                 files_searched += 1
 
                 try:
-                    content = file_path.read_text(encoding="utf-8")
+                    async with aiofiles.open(file_path, encoding="utf-8") as f:
+                        content = await f.read()
                     matches = list(regex.finditer(content))
 
                     if not matches:
@@ -495,7 +495,7 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 if not old_text:
                     return "Error: old_text parameter is required for replace operation"
 
-                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                async with aiofiles.open(file_path, encoding="utf-8") as f:
                     content = await f.read()
 
                 if old_text not in content:
@@ -521,7 +521,7 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 if line_number <= 0:
                     return "Error: line_number must be positive (1-indexed)"
 
-                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                async with aiofiles.open(file_path, encoding="utf-8") as f:
                     content = await f.read()
                 lines = content.splitlines(keepends=True)
 

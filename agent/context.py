@@ -111,8 +111,9 @@ async def format_context_prompt() -> str:
 
         if git_info.get("recent_commits"):
             lines.append("\nRecent commits:")
-            for commit_line in git_info["recent_commits"].split("\n"):
-                lines.append(f"  {commit_line}")
+            lines.extend(
+                [f"  {commit_line}" for commit_line in git_info["recent_commits"].split("\n")]
+            )
     else:
         lines.append("\nGit repository: No")
 

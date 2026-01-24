@@ -30,7 +30,6 @@ dependencies = [
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
     "httpx>=0.28.0",
-    "requests>=2.31.0",
     "trafilatura>=2.0.0",
     "lxml>=5.0.0",
     "aiofiles>=24.1.0",
@@ -51,7 +50,6 @@ dev = [
     "mypy>=1.0.0",
     "ruff>=0.6.0",
     "pre-commit>=3.0.0",
-    "types-requests>=2.31.0.0",
 ]
 
 [project.urls]
@@ -96,7 +94,7 @@ line-length = 100
 target-version = "py38"
 
 [tool.ruff.lint]
-select = ["E", "F", "ASYNC"]
+select = ["E", "F", "ASYNC", "B", "UP", "I", "SIM", "PERF"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
