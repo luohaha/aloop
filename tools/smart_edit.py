@@ -7,7 +7,6 @@ This tool provides advanced editing features beyond the basic EditTool:
 - Rollback: Can revert changes if editing fails
 """
 
-import asyncio
 from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple

@@ -168,7 +168,7 @@ unless wrapped behind an async boundary (see `rfc/003-asyncio-migration.md`).
 # tools/database.py
 from .base import BaseTool
 from typing import Dict, Any
-import sqlite3
+import aiosqlite
 
 class DatabaseTool(BaseTool):
     """Tool for executing SQL queries."""
@@ -200,23 +200,21 @@ class DatabaseTool(BaseTool):
             return "Error: Only SELECT queries are allowed for safety"
 
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(query)
-            results = cursor.fetchall()
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute(query) as cursor:
+                    results = await cursor.fetchall()
 
             if not results:
                 return "Query returned no results"
 
             # Format results as a table
             return "\n".join([str(row) for row in results])
-        except sqlite3.Error as e:
+        except aiosqlite.Error as e:
             return f"Database error: {str(e)}"
 ```
 
-**Note**: During the asyncio migration, prefer an async SQLite strategy for new runtime code, or ensure
-blocking DB calls are executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
+**Note**: During the asyncio migration, prefer `aiosqlite` for new runtime code, or ensure blocking
+DB calls are executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
 
 ## Creating New Agent Modes
 

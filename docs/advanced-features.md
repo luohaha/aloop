@@ -532,7 +532,7 @@ final_report = await analyzer.run(f"Analyze this data: {raw_data}")
 ### Pattern 2: Batch Processing with Rate Limiting
 
 ```python
-import time
+import asyncio
 
 results = []
 for i, task in enumerate(tasks):
@@ -542,7 +542,7 @@ for i, task in enumerate(tasks):
     # Add delay every 10 requests
     if (i + 1) % 10 == 0:
         print("Rate limiting... waiting 60s")
-        time.sleep(60)
+        await asyncio.sleep(60)
 ```
 
 ### Pattern 3: Progressive Enhancement
