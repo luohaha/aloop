@@ -1,6 +1,5 @@
 """Base agent class for all agent types."""
 
-import asyncio
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
@@ -73,9 +72,7 @@ class BaseAgent(ABC):
         Returns:
             LLMResponse object
         """
-        return await asyncio.to_thread(
-            self.llm.call, messages=messages, tools=tools, max_tokens=4096, **kwargs
-        )
+        return await self.llm.call_async(messages=messages, tools=tools, max_tokens=4096, **kwargs)
 
     def _extract_text(self, response: LLMResponse) -> str:
         """Extract text from LLM response.
@@ -140,7 +137,7 @@ class BaseAgent(ABC):
                             "input": response.usage.get("input_tokens", 0),
                             "output": response.usage.get("output_tokens", 0),
                         }
-                    self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
+                    await self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
 
                     # Log compression info if it happened
                     if self.memory.was_compressed_last_iteration:
@@ -205,13 +202,13 @@ class BaseAgent(ABC):
                 if isinstance(result_messages, list):
                     for msg in result_messages:
                         if use_memory and save_to_memory:
-                            self.memory.add_message(msg)
+                            await self.memory.add_message(msg)
                         else:
                             messages.append(msg)
                 else:
                     # Backward compatibility: single message
                     if use_memory and save_to_memory:
-                        self.memory.add_message(result_messages)
+                        await self.memory.add_message(result_messages)
                     else:
                         messages.append(result_messages)
 
@@ -274,7 +271,7 @@ Execute this subtask NOW and provide concrete results."""
             try:
                 from .context import format_context_prompt
 
-                context = await asyncio.to_thread(format_context_prompt)
+                context = format_context_prompt()
                 sub_system_prompt = context + "\n\n" + sub_system_prompt
             except Exception as e:
                 logger.debug(f"Failed to add context: {e}")

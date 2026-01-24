@@ -26,14 +26,16 @@ classifiers = [
 
 dependencies = [
     "python-dotenv>=1.0.0",
-    "ddgs>=1.0.0",
+    "duckduckgo-search>=5.1.0,<6",
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
+    "httpx>=0.28.0",
     "requests>=2.31.0",
     "trafilatura>=2.0.0",
     "lxml>=5.0.0",
     "litellm>=1.30.0",
     "tiktoken>=0.5.0",
+    "tenacity>=8.2.0",
     "tree-sitter>=0.21.0,<0.22.0",
     "tree-sitter-languages>=1.8.0,<1.11.0",
 ]
@@ -41,6 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-asyncio>=0.24.0",
     "black>=23.0.0",
     "isort>=5.12.0",
     "mypy>=1.0.0",
@@ -95,6 +98,7 @@ select = ["E", "F"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 markers = [
     "integration: live LLM integration tests (skipped unless RUN_INTEGRATION_TESTS=1)",
 ]
