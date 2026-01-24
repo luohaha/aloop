@@ -29,7 +29,7 @@ class Config:
     LITELLM_TIMEOUT = int(os.getenv("LITELLM_TIMEOUT", "600"))
 
     # Agent Configuration
-    MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "10"))
+    MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "1000"))
 
     # Retry Configuration
     RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
