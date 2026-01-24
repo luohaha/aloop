@@ -2,7 +2,7 @@
 
 import asyncio
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from llm import LLMMessage
 from memory.scope import MemoryScope, ScopedMemoryView
@@ -28,6 +28,10 @@ from .prompts import (
 
 logger = get_logger(__name__)
 
+if TYPE_CHECKING:
+    from llm import LiteLLMAdapter
+    from tools.base import BaseTool
+
 
 class PlanExecuteAgent(BaseAgent):
     """Four-phase Plan-Execute agent with exploration and parallel execution.
@@ -47,9 +51,11 @@ class PlanExecuteAgent(BaseAgent):
     # Read-only tools for exploration phase
     EXPLORATION_TOOLS = {"glob_files", "grep_content", "read_file", "code_navigator"}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self, llm: "LiteLLMAdapter", tools: List["BaseTool"], max_iterations: int = 10
+    ) -> None:
         """Initialize the enhanced plan-execute agent."""
-        super().__init__(*args, **kwargs)
+        super().__init__(llm=llm, tools=tools, max_iterations=max_iterations)
         self._exploration_results: Optional[ExplorationResult] = None
         self._current_plan: Optional[ExecutionPlan] = None
         self._failure_count = 0

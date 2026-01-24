@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import aiofiles
-import aiofiles.os.path
+import aiofiles.os
 
 from tools.base import BaseTool
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
 import aiofiles
-import aiofiles.os.path
+import aiofiles.os
 
 from tools.base import BaseTool
 
