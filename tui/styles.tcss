@@ -1,0 +1,297 @@
+/* AgenticLoop TUI Styles - aloop visual identity */
+
+/* ============================================= */
+/* Global Styles                                  */
+/* ============================================= */
+
+Screen {
+    background: $surface;
+}
+
+/* ============================================= */
+/* Header                                         */
+/* ============================================= */
+
+#header {
+    dock: top;
+    height: 1;
+    background: $primary-darken-2;
+    color: $text;
+    padding: 0 1;
+}
+
+#header .logo {
+    color: $success;
+    text-style: bold;
+}
+
+#header .model-info {
+    color: $text-muted;
+}
+
+#header .mode-badge {
+    background: $primary;
+    color: $text;
+    padding: 0 1;
+}
+
+#header .token-count {
+    color: $warning;
+}
+
+/* ============================================= */
+/* Message Panel                                  */
+/* ============================================= */
+
+#message-panel {
+    height: 1fr;
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+    padding: 0 1;
+}
+
+.message-container {
+    margin: 1 0;
+    padding: 0;
+}
+
+/* User message styling */
+.user-message {
+    border: solid $secondary;
+    padding: 1;
+    margin: 1 2 1 0;
+}
+
+.user-message .message-header {
+    color: $secondary;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Assistant message styling */
+.assistant-message {
+    border: solid $primary;
+    padding: 1;
+    margin: 1 0 1 2;
+}
+
+.assistant-message .message-header {
+    color: $primary;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* Tool call block styling */
+.tool-call {
+    background: $surface-darken-1;
+    border: dashed $warning;
+    padding: 0 1;
+    margin: 1 0;
+}
+
+.tool-call-header {
+    color: $warning;
+}
+
+.tool-call-content {
+    color: $text-muted;
+    padding-left: 2;
+}
+
+.tool-call.collapsed .tool-call-content {
+    display: none;
+}
+
+/* Thinking block styling */
+.thinking-block {
+    background: $surface-darken-1;
+    border: dashed $primary-lighten-2;
+    padding: 0 1;
+    margin: 1 0;
+}
+
+.thinking-header {
+    color: $primary-lighten-2;
+}
+
+.thinking-content {
+    color: $text-muted;
+    padding-left: 2;
+}
+
+.thinking-block.collapsed .thinking-content {
+    display: none;
+}
+
+/* Streaming cursor */
+.streaming-cursor {
+    color: $success;
+    text-style: bold;
+}
+
+/* ============================================= */
+/* Status Bar                                     */
+/* ============================================= */
+
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: $surface-darken-2;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+.status-item {
+    margin: 0 1;
+}
+
+.status-turn {
+    color: $text;
+}
+
+.status-tokens {
+    color: $warning;
+}
+
+.status-cost {
+    color: $success;
+}
+
+.status-compressions {
+    color: $primary;
+}
+
+/* ============================================= */
+/* Input Area                                     */
+/* ============================================= */
+
+#input-area {
+    dock: bottom;
+    height: auto;
+    min-height: 3;
+    max-height: 10;
+    padding: 0 1;
+    background: $surface;
+    border-top: solid $primary-darken-1;
+}
+
+#input-area TextArea {
+    min-height: 1;
+    max-height: 8;
+    border: none;
+    background: $surface;
+}
+
+#input-area TextArea:focus {
+    border: none;
+}
+
+.input-hint {
+    color: $text-muted;
+    text-style: italic;
+}
+
+.input-help-key {
+    color: $text-muted;
+    background: $surface-darken-1;
+    padding: 0 1;
+}
+
+/* ============================================= */
+/* Completion Popup                               */
+/* ============================================= */
+
+#completion-popup {
+    layer: popup;
+    background: $surface;
+    border: solid $primary;
+    padding: 0;
+    max-height: 10;
+    overflow-y: auto;
+}
+
+.completion-item {
+    padding: 0 1;
+}
+
+.completion-item.selected {
+    background: $primary;
+    color: $text;
+}
+
+.completion-type {
+    color: $text-muted;
+    margin-left: 1;
+}
+
+/* ============================================= */
+/* Help Screen                                    */
+/* ============================================= */
+
+#help-modal {
+    align: center middle;
+    width: 60;
+    height: auto;
+    max-height: 80%;
+    background: $surface;
+    border: double $primary;
+    padding: 1 2;
+}
+
+#help-modal .help-title {
+    color: $primary;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#help-modal .help-section {
+    margin: 1 0;
+}
+
+#help-modal .help-section-title {
+    color: $secondary;
+    text-style: bold;
+}
+
+#help-modal .help-key {
+    color: $warning;
+    min-width: 15;
+}
+
+#help-modal .help-description {
+    color: $text;
+}
+
+/* ============================================= */
+/* Spinner / Progress                             */
+/* ============================================= */
+
+.spinner {
+    color: $warning;
+}
+
+.progress-bar {
+    background: $surface-darken-1;
+}
+
+.progress-bar .progress-fill {
+    background: $primary;
+}
+
+/* ============================================= */
+/* Error Display                                  */
+/* ============================================= */
+
+.error-message {
+    border: solid $error;
+    background: $error-darken-3;
+    padding: 1;
+    margin: 1 0;
+}
+
+.error-title {
+    color: $error;
+    text-style: bold;
+}
+

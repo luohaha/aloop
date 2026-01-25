@@ -10,6 +10,15 @@ from tools.base import BaseTool
 from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
 
+from .events import (
+    AgentEventEmitter,
+    AssistantResponse,
+    IterationStarted,
+    MemoryCompressed,
+    ThinkingEvent,
+    ToolCallCompleted,
+    ToolCallStarted,
+)
 from .todo import TodoList
 from .tool_executor import ToolExecutor
 
@@ -19,7 +28,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class BaseAgent(ABC):
+class BaseAgent(ABC, AgentEventEmitter):
     """Abstract base class for all agent types."""
 
     def __init__(
@@ -35,6 +44,9 @@ class BaseAgent(ABC):
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
         """
+        # Initialize event emitter
+        AgentEventEmitter.__init__(self)
+
         self.llm = llm
         self.max_iterations = max_iterations
 
@@ -117,6 +129,8 @@ class BaseAgent(ABC):
             Final answer as a string
         """
         for iteration in range(max_iterations):
+            # Emit iteration event and print if verbose
+            self.emit_event(IterationStarted(iteration + 1, max_iterations))
             if verbose:
                 terminal_ui.print_iteration(iteration + 1, max_iterations)
 
@@ -142,10 +156,13 @@ class BaseAgent(ABC):
                         }
                     self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
 
-                    # Log compression info if it happened
+                    # Log and emit compression info if it happened
                     if self.memory.was_compressed_last_iteration:
                         logger.debug(
                             f"Memory compressed: saved {self.memory.last_compression_savings} tokens"
+                        )
+                        self.emit_event(
+                            MemoryCompressed(tokens_saved=self.memory.last_compression_savings)
                         )
             else:
                 # For local messages (mini-loop), still track token usage
@@ -161,6 +178,8 @@ class BaseAgent(ABC):
             # Check if we're done (no tool calls)
             if response.stop_reason == StopReason.STOP:
                 final_answer = self._extract_text(response)
+                # Emit final response event
+                self.emit_event(AssistantResponse(content=final_answer, is_final=True))
                 if verbose:
                     terminal_ui.console.print("\n[bold green]✓ Final answer received[/bold green]")
                 return final_answer
@@ -172,23 +191,46 @@ class BaseAgent(ABC):
                 if not tool_calls:
                     # No tool calls found, return response
                     final_answer = self._extract_text(response)
+                    self.emit_event(
+                        AssistantResponse(
+                            content=final_answer if final_answer else "No response generated.",
+                            is_final=True,
+                        )
+                    )
                     return final_answer if final_answer else "No response generated."
 
-                # Print thinking/reasoning if available
-                if verbose and hasattr(self.llm, "extract_thinking"):
+                # Extract and emit thinking/reasoning if available
+                if hasattr(self.llm, "extract_thinking"):
                     thinking = self.llm.extract_thinking(response)
                     if thinking:
-                        terminal_ui.print_thinking(thinking)
+                        self.emit_event(ThinkingEvent(content=thinking))
+                        if verbose:
+                            terminal_ui.print_thinking(thinking)
 
                 # Execute each tool call
                 tool_results = []
                 for tc in tool_calls:
+                    # Emit tool call started event
+                    self.emit_event(
+                        ToolCallStarted(
+                            tool_name=tc.name, arguments=tc.arguments, tool_call_id=tc.id
+                        )
+                    )
                     if verbose:
                         terminal_ui.print_tool_call(tc.name, tc.arguments)
 
                     result = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
                     # Tool already handles size limits, no additional processing needed
 
+                    # Emit tool call completed event
+                    self.emit_event(
+                        ToolCallCompleted(
+                            tool_name=tc.name,
+                            tool_call_id=tc.id,
+                            result=result,
+                            success=True,
+                        )
+                    )
                     if verbose:
                         terminal_ui.print_tool_result(result)
 

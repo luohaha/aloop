@@ -36,6 +36,7 @@ dependencies = [
     "tiktoken>=0.5.0",
     "tree-sitter>=0.21.0,<0.22.0",
     "tree-sitter-languages>=1.8.0,<1.11.0",
+    "textual>=0.47.0",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +61,7 @@ aloop = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure
-packages = ["agent", "llm", "memory", "tools", "utils"]
+packages = ["agent", "llm", "memory", "tools", "utils", "tui", "tui.screens", "tui.widgets"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]

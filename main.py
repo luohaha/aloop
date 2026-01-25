@@ -18,6 +18,7 @@ from tools.shell import ShellTool
 from tools.smart_edit import SmartEditTool
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
+from tui.app import run_tui_mode
 from utils import get_log_file_path, setup_logger, terminal_ui
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
@@ -96,6 +97,11 @@ def main():
         type=str,
         help="Task for the agent to complete (if not provided, enters interactive mode)",
     )
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Use the new TUI mode instead of classic interactive mode",
+    )
 
     args = parser.parse_args()
 
@@ -112,7 +118,12 @@ def main():
     async def _run() -> None:
         # If no task provided, enter interactive mode (default behavior)
         if not args.task:
-            await run_interactive_mode(agent, args.mode)
+            if args.tui:
+                # Use new TUI mode
+                await run_tui_mode(agent, args.mode)
+            else:
+                # Use classic interactive mode
+                await run_interactive_mode(agent, args.mode)
             return
 
         # Single-turn mode: execute one task and exit
