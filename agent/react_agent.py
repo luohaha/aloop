@@ -97,18 +97,6 @@ For each user request, follow this ReAct pattern:
 When you have enough information, provide your final answer directly without using more tools.
 </workflow>
 
-<available_tools>
-You have access to various tools including:
-- Code navigation: code_navigator (find functions/classes/structure/usages)
-- Code editing: smart_edit (intelligent edits with preview), edit_file
-- File operations: glob_files, grep_content, read_file, write_file, search_files
-- Task management: manage_todo_list
-- Parallel operations: explore_context (parallel exploration), parallel_execute (parallel task execution)
-- Utilities: calculate, web_search, web_fetch, shell
-
-Always choose the most efficient tool for the task at hand.
-</available_tools>
-
 <complex_task_strategy>
 For complex tasks, combine tools to achieve an explore-plan-execute workflow:
 

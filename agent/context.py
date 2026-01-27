@@ -90,35 +90,23 @@ async def format_context_prompt() -> str:
 
     Returns:
         Formatted context string with XML tags
+
+    Note:
+        Git information is intentionally excluded to save tokens.
+        Agents can use git_status, git_log, and other git tools
+        to get up-to-date repository information when needed.
     """
     cwd = get_working_directory()
     platform_info = get_platform_info()
-    git_info = await get_git_status()
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Build context string
-    lines = ["<environment>"]
-    lines.append(f"Working directory: {cwd}")
-    lines.append(f"Platform: {platform_info['system']} ({platform_info['platform']})")
-    lines.append(f"Python version: {platform_info['python_version']}")
-    lines.append(f"Today's date: {today}")
-
-    # Add git information if available
-    if git_info.get("is_repo"):
-        lines.append("\nGit repository: Yes")
-        lines.append(f"Current branch: {git_info['branch']}")
-        lines.append(f"Main branch: {git_info['main_branch']}")
-        lines.append(f"Status: {git_info['status']}")
-
-        if git_info.get("recent_commits"):
-            lines.append("\nRecent commits:")
-            lines.extend(
-                [f"  {commit_line}" for commit_line in git_info["recent_commits"].split("\n")]
-            )
-    else:
-        lines.append("\nGit repository: No")
-
-    lines.append("</environment>\n")
+    lines = [
+        "<environment>",
+        f"Working directory: {cwd}",
+        f"Platform: {platform_info['system']}",
+        f"Today's date: {today}",
+        "</environment>\n",
+    ]
 
     return "\n".join(lines)
 
