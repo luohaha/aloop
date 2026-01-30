@@ -15,7 +15,12 @@ from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_exports_dir, get_history_file
 from utils.tui.input_handler import InputHandler
-from utils.tui.model_ui import open_config_and_wait_for_save, pick_model_id
+from utils.tui.model_ui import (
+    mask_secret,
+    open_config_and_wait_for_save,
+    parse_kv_args,
+    pick_model_id,
+)
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
 
@@ -433,23 +438,10 @@ class InteractiveSession:
             terminal_ui.print_error(f"Failed to switch to model '{model_id}'")
 
     def _parse_kv_args(self, tokens: list[str]) -> tuple[dict[str, str], list[str]]:
-        kv: dict[str, str] = {}
-        rest: list[str] = []
-        for token in tokens:
-            if "=" in token:
-                k, _, v = token.partition("=")
-                kv[k.strip()] = v
-            else:
-                rest.append(token)
-        return kv, rest
+        return parse_kv_args(tokens)
 
     def _mask_secret(self, value: str | None) -> str:
-        if not value:
-            return "(not set)"
-        v = value.strip()
-        if len(v) <= 8:
-            return "*" * len(v)
-        return f"{v[:4]}…{v[-4:]}"
+        return mask_secret(value)
 
     async def _handle_model_command(self, user_input: str) -> None:
         """Handle the /model command.
@@ -689,23 +681,10 @@ class ModelSetupSession:
         )
 
     def _parse_kv_args(self, tokens: list[str]) -> tuple[dict[str, str], list[str]]:
-        kv: dict[str, str] = {}
-        rest: list[str] = []
-        for token in tokens:
-            if "=" in token:
-                k, _, v = token.partition("=")
-                kv[k.strip()] = v
-            else:
-                rest.append(token)
-        return kv, rest
+        return parse_kv_args(tokens)
 
     def _mask_secret(self, value: str | None) -> str:
-        if not value:
-            return "(not set)"
-        v = value.strip()
-        if len(v) <= 8:
-            return "*" * len(v)
-        return f"{v[:4]}…{v[-4:]}"
+        return mask_secret(value)
 
     async def _handle_model_command(self, user_input: str) -> None:
         colors = Theme.get_colors()

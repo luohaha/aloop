@@ -177,3 +177,24 @@ async def pick_model_id(model_manager: _ModelManager, title: str) -> str | None:
         mouse_support=False,
     )
     return await app.run_async()
+
+
+def mask_secret(value: str | None) -> str:
+    if not value:
+        return "(not set)"
+    v = value.strip()
+    if len(v) <= 8:
+        return "*" * len(v)
+    return f"{v[:4]}…{v[-4:]}"
+
+
+def parse_kv_args(tokens: list[str]) -> tuple[dict[str, str], list[str]]:
+    kv: dict[str, str] = {}
+    rest: list[str] = []
+    for token in tokens:
+        if "=" in token:
+            k, _, v = token.partition("=")
+            kv[k.strip()] = v
+        else:
+            rest.append(token)
+    return kv, rest
