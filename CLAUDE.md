@@ -32,7 +32,7 @@ Never commit directly to `main`. All changes go through PR review.
 ## Checkpoint Commits
 
 Prefer small, reviewable commits:
-- Commit after a “green” checkpoint (`./scripts/dev.sh precommit` + `./scripts/dev.sh test -q`).
+- Before committing, run `./scripts/dev.sh check` (precommit + typecheck + tests).
 - Keep mechanical changes (formatting, renames) in their own commit when possible.
 
 ## CI
