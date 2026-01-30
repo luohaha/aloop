@@ -57,57 +57,59 @@ pre-commit install
 
 ### 1. Configuration
 
-On first run, `.aloop/config` is created automatically with sensible defaults. Edit it to configure your LLM provider:
+On first run, `.aloop/models.yaml` is created automatically with a template. Edit it to configure your models and API keys (this file is gitignored):
 
 ```bash
-$EDITOR .aloop/config
+$EDITOR .aloop/models.yaml
 ```
 
-Example `.aloop/config`:
+Example `.aloop/models.yaml`:
+
+```yaml
+models:
+  openai/gpt-4o:
+    name: GPT-4o
+    api_key: sk-...
+    timeout: 300
+
+  anthropic/claude-3-5-sonnet-20241022:
+    name: Claude 3.5 Sonnet
+    api_key: sk-ant-...
+
+  # Local model example
+  ollama/llama2:
+    name: Local Llama
+    api_base: http://localhost:11434
+
+default: openai/gpt-4o
+```
+
+Non-model runtime settings live in `.aloop/config` (created automatically). Example:
 
 ```bash
-# LiteLLM Model Configuration (supports 100+ providers)
-# Format: provider/model_name
-LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
-
-# API Keys (set the key for your chosen provider)
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-OPENAI_API_KEY=your_openai_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Optional: Custom base URL for proxies or custom endpoints
-LITELLM_API_BASE=
-
-# Optional: LiteLLM-specific settings
-LITELLM_DROP_PARAMS=true       # Drop unsupported params instead of erroring
-LITELLM_TIMEOUT=600            # Request timeout in seconds
-
-# Agent Configuration
-MAX_ITERATIONS=100  # Maximum iteration loops
-
-# Memory Management
+MAX_ITERATIONS=100
 MEMORY_ENABLED=true
-MEMORY_COMPRESSION_THRESHOLD=25000
-MEMORY_SHORT_TERM_SIZE=100
-MEMORY_COMPRESSION_RATIO=0.3
-
-# Retry Configuration (for handling rate limits)
-RETRY_MAX_ATTEMPTS=3
-RETRY_INITIAL_DELAY=1.0
-RETRY_MAX_DELAY=60.0
-
-# Logging
-LOG_LEVEL=DEBUG
 ```
 
-**Quick setup for different providers:**
+**Switching Models:**
 
-- **Anthropic Claude**: `LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022`
-- **OpenAI GPT**: `LITELLM_MODEL=openai/gpt-4o`
-- **Google Gemini**: `LITELLM_MODEL=gemini/gemini-1.5-pro`
-- **Azure OpenAI**: `LITELLM_MODEL=azure/gpt-4`
-- **AWS Bedrock**: `LITELLM_MODEL=bedrock/anthropic.claude-v2`
-- **Local (Ollama)**: `LITELLM_MODEL=ollama/llama2`
+In interactive mode, use the `/model` command:
+```bash
+# List available models
+/model
+
+# Switch to a specific model
+/model openai/gpt-4o
+```
+
+Or use the CLI flag:
+```bash
+python main.py --task "Hello" --model openai/gpt-4o
+```
+
+**Model setup:**
+
+Edit `.aloop/models.yaml` and add your provider model IDs + API keys.
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for 100+ supported providers.
 
@@ -238,10 +240,7 @@ See the [Configuration Guide](docs/configuration.md) for all options. Key settin
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `LITELLM_MODEL` | LiteLLM model (provider/model format) | `anthropic/claude-3-5-sonnet-20241022` |
-| `LITELLM_API_BASE` | Custom base URL for proxies | Empty |
-| `LITELLM_DROP_PARAMS` | Drop unsupported params | `true` |
-| `LITELLM_TIMEOUT` | Request timeout in seconds | `600` |
+| `.aloop/models.yaml` | Model configuration (models + keys + default) | - |
 | `MAX_ITERATIONS` | Maximum agent iterations | `100` |
 | `MEMORY_COMPRESSION_THRESHOLD` | Compress when exceeded | `25000` |
 | `MEMORY_SHORT_TERM_SIZE` | Recent messages to keep | `100` |

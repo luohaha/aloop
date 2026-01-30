@@ -194,9 +194,15 @@ Support for proxies, Azure, and local deployments:
 
 ### Configuration
 
-```bash
+```yaml
 # Proxy / custom endpoint
-LITELLM_API_BASE=http://proxy.company.com
+# Set `api_base` on the model you want to route through a proxy.
+models:
+  openai/gpt-4o:
+    api_key: sk-...
+    api_base: http://proxy.company.com
+
+default: openai/gpt-4o
 ```
 
 ### Use Cases
@@ -210,11 +216,15 @@ LITELLM_API_BASE=http://proxy.company.com
 ### Example: Azure OpenAI
 
 ```bash
-# .aloop/config
-LITELLM_MODEL=azure/gpt-4
-AZURE_API_KEY=your_azure_key
-AZURE_API_BASE=https://your-resource.openai.azure.com
-AZURE_API_VERSION=2024-02-15-preview
+# .aloop/models.yaml
+models:
+  azure/gpt-4:
+    name: Azure GPT-4
+    api_key: your_azure_key
+    api_base: https://your-resource.openai.azure.com
+    api_version: 2024-02-15-preview
+
+default: azure/gpt-4
 ```
 
 ## Agent Mode Comparison

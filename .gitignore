@@ -48,6 +48,9 @@ coverage.xml
 *.cover
 *.py.cover
 .hypothesis/
+
+# Model configuration (contains API keys)
+.aloop/models.yaml
 .pytest_cache/
 cover/
 

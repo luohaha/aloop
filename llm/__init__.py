@@ -23,6 +23,7 @@ from .message_types import (
     ToolCallBlock,
     ToolResult,
 )
+from .model_manager import ModelManager, ModelProfile
 
 __all__ = [
     # Core types
@@ -35,6 +36,9 @@ __all__ = [
     "StopReason",
     # Adapter
     "LiteLLMAdapter",
+    # Model Manager
+    "ModelManager",
+    "ModelProfile",
     # Utilities
     "extract_text",
     "extract_text_from_message",

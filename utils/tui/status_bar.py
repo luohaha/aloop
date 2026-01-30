@@ -23,6 +23,7 @@ class StatusBarState:
     cost: float = 0.0
     is_processing: bool = False
     status_message: str = ""
+    model_name: str = ""
 
 
 class StatusBar:
@@ -64,6 +65,12 @@ class StatusBar:
 
         # Build status items
         items = []
+
+        # Model name (if set)
+        if self.state.model_name:
+            items.append(
+                f"[{colors.text_secondary}]Model:[/{colors.text_secondary}] [{colors.primary}]{self.state.model_name}[/{colors.primary}]"
+            )
 
         # Mode
         items.append(
@@ -111,6 +118,7 @@ class StatusBar:
         cost: Optional[float] = None,
         is_processing: Optional[bool] = None,
         status_message: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> None:
         """Update status bar state.
 
@@ -122,6 +130,7 @@ class StatusBar:
             cost: Current cost
             is_processing: Whether currently processing
             status_message: Optional status message
+            model_name: Current model name
         """
         if mode is not None:
             self.state.mode = mode
@@ -137,6 +146,8 @@ class StatusBar:
             self.state.is_processing = is_processing
         if status_message is not None:
             self.state.status_message = status_message
+        if model_name is not None:
+            self.state.model_name = model_name
 
         # Refresh live display if active
         if self._live is not None:

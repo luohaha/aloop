@@ -91,9 +91,12 @@ What would you like me to help you with?
 ### With OpenAI GPT
 
 ```bash
-# Set in .aloop/config:
-OPENAI_API_KEY=your_key_here
-LITELLM_MODEL=openai/gpt-4o
+# Add to .aloop/models.yaml:
+# models:
+#   openai/gpt-4o:
+#     name: GPT-4o
+#     api_key: your_key_here
+# default: openai/gpt-4o
 
 # Run:
 python main.py --task "Your task here"
@@ -102,9 +105,12 @@ python main.py --task "Your task here"
 ### With Google Gemini
 
 ```bash
-# Set in .aloop/config:
-GEMINI_API_KEY=your_key_here
-LITELLM_MODEL=gemini/gemini-1.5-flash
+# Add to .aloop/models.yaml:
+# models:
+#   gemini/gemini-1.5-flash:
+#     name: Gemini Flash
+#     api_key: your_key_here
+# default: gemini/gemini-1.5-flash
 
 # Run:
 python main.py --task "Your task here"
@@ -113,9 +119,12 @@ python main.py --task "Your task here"
 ### With Anthropic Claude
 
 ```bash
-# Set in .aloop/config:
-ANTHROPIC_API_KEY=your_key_here
-LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
+# Add to .aloop/models.yaml:
+# models:
+#   anthropic/claude-3-5-sonnet-20241022:
+#     name: Claude 3.5 Sonnet
+#     api_key: your_key_here
+# default: anthropic/claude-3-5-sonnet-20241022
 
 # Run:
 python main.py --task "Your task here"
@@ -222,7 +231,7 @@ See [Memory Management](memory-management.md) for more details.
 import asyncio
 
 from agent.react_agent import ReActAgent
-from llm import LiteLLMAdapter
+from llm import LiteLLMAdapter, ModelManager
 from tools import CalculatorTool, FileReadTool
 from config import Config
 
@@ -232,12 +241,12 @@ async def main():
     Config.RETRY_INITIAL_DELAY = 2.0
     Config.RETRY_MAX_DELAY = 60.0
 
-    llm = LiteLLMAdapter(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
-    )
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    if not profile:
+        raise RuntimeError("No models configured. Edit .aloop/models.yaml and set `default`.")
+
+    llm = LiteLLMAdapter(model=profile.model_id, api_key=profile.api_key, api_base=profile.api_base)
 
     # Create agent with specific tools
     agent = ReActAgent(
@@ -313,7 +322,7 @@ MEMORY_ENABLED=true
 MEMORY_COMPRESSION_THRESHOLD=40000
 
 # Use more efficient models:
-LITELLM_MODEL=openai/gpt-4o-mini  # or gemini/gemini-1.5-flash, anthropic/claude-3-5-haiku-20241022
+# Edit `.aloop/models.yaml` and switch `default`, or use `/model <model_id>` in interactive mode.
 ```
 
 ### API Errors
@@ -322,7 +331,7 @@ For consistent API errors:
 
 ```bash
 # Check your API key configuration
-grep API_KEY .aloop/config
+grep api_key .aloop/models.yaml
 
 # Test with a simple task first
 python main.py --task "Calculate 1+1"

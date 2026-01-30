@@ -14,7 +14,7 @@ from .todo import TodoList
 from .tool_executor import ToolExecutor
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter
+    from llm import LiteLLMAdapter, ModelManager
 
 logger = get_logger(__name__)
 
@@ -27,6 +27,7 @@ class BaseAgent(ABC):
         llm: "LiteLLMAdapter",
         tools: List[BaseTool],
         max_iterations: int = 10,
+        model_manager: Optional["ModelManager"] = None,
     ):
         """Initialize the agent.
 
@@ -34,9 +35,11 @@ class BaseAgent(ABC):
             llm: LLM instance to use
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
+            model_manager: Optional model manager for switching models
         """
         self.llm = llm
         self.max_iterations = max_iterations
+        self.model_manager = model_manager
 
         # Initialize todo list system
         self.todo_list = TodoList()
@@ -225,3 +228,64 @@ class BaseAgent(ABC):
                         await self.memory.add_message(result_messages)
                     else:
                         messages.append(result_messages)
+
+    def switch_model(self, model_id: str) -> bool:
+        """Switch to a different model.
+
+        Args:
+            model_id: LiteLLM model ID to switch to
+
+        Returns:
+            True if switch was successful, False otherwise
+        """
+        if not self.model_manager:
+            logger.warning("No model manager available for switching models")
+            return False
+
+        profile = self.model_manager.get_model(model_id)
+        if not profile:
+            logger.error(f"Model '{model_id}' not found")
+            return False
+
+        # Validate the model
+        is_valid, error_msg = self.model_manager.validate_model(profile)
+        if not is_valid:
+            logger.error(f"Invalid model: {error_msg}")
+            return False
+
+        # Switch the model
+        new_profile = self.model_manager.switch_model(model_id)
+        if not new_profile:
+            logger.error(f"Failed to switch to model '{model_id}'")
+            return False
+
+        # Reinitialize LLM adapter with new model
+        from llm import LiteLLMAdapter
+
+        self.llm = LiteLLMAdapter(
+            model=new_profile.model_id,
+            api_key=new_profile.api_key,
+            api_base=new_profile.api_base,
+            timeout=new_profile.timeout,
+            drop_params=new_profile.drop_params,
+        )
+
+        logger.info(f"Switched to model: {new_profile.display_name} ({new_profile.model_id})")
+        return True
+
+    def get_current_model_info(self) -> Optional[dict]:
+        """Get information about the current model.
+
+        Returns:
+            Dictionary with model info or None if not available
+        """
+        if self.model_manager:
+            profile = self.model_manager.get_current_model()
+            if not profile:
+                return None
+            return {
+                "name": profile.display_name,
+                "model_id": profile.model_id,
+                "provider": profile.provider,
+            }
+        return None

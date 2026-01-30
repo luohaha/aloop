@@ -11,20 +11,10 @@ _CONFIG_FILE = os.path.join(_RUNTIME_DIR, "config")
 # Default configuration template
 _DEFAULT_CONFIG = """\
 # AgenticLoop Configuration
+#
+# NOTE: Model configuration lives in `.aloop/models.yaml`.
+# This file controls non-model runtime settings only.
 
-# LiteLLM Model Configuration
-# Format: provider/model_name (e.g. "anthropic/claude-3-5-sonnet-20241022")
-LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
-
-# API Keys (set the key for your chosen provider)
-ANTHROPIC_API_KEY=
-OPENAI_API_KEY=
-GEMINI_API_KEY=
-
-# Optional settings
-LITELLM_API_BASE=
-LITELLM_DROP_PARAMS=true
-LITELLM_TIMEOUT=600
 TOOL_TIMEOUT=600
 MAX_ITERATIONS=1000
 """
@@ -63,25 +53,23 @@ _ensure_config()
 _cfg = _load_config(_CONFIG_FILE)
 
 
+def get_raw_config() -> dict[str, str]:
+    """Get the raw config dictionary.
+
+    Returns:
+        Dictionary of config key-value pairs
+    """
+    return _cfg.copy()
+
+
 class Config:
     """Configuration for the agentic system.
 
     All configuration is centralized here. Access config values directly via Config.XXX.
     """
 
-    # LiteLLM Model Configuration
-    # Format: provider/model_name (e.g. "anthropic/claude-3-5-sonnet-20241022")
-    LITELLM_MODEL = _cfg.get("LITELLM_MODEL", "anthropic/claude-3-5-sonnet-20241022")
-
-    # Common provider API keys (optional depending on provider)
-    ANTHROPIC_API_KEY = _cfg.get("ANTHROPIC_API_KEY") or None
-    OPENAI_API_KEY = _cfg.get("OPENAI_API_KEY") or None
-    GEMINI_API_KEY = _cfg.get("GEMINI_API_KEY") or _cfg.get("GOOGLE_API_KEY") or None
-
-    # Optional LiteLLM Configuration
-    LITELLM_API_BASE = _cfg.get("LITELLM_API_BASE") or None
-    LITELLM_DROP_PARAMS = _cfg.get("LITELLM_DROP_PARAMS", "true").lower() == "true"
-    LITELLM_TIMEOUT = int(_cfg.get("LITELLM_TIMEOUT", "600"))
+    # Model configuration is handled by `.aloop/models.yaml` via ModelManager.
+    # `.aloop/config` controls non-model runtime settings only.
     TOOL_TIMEOUT = float(_cfg.get("TOOL_TIMEOUT", "600"))
 
     # Agent Configuration
@@ -147,17 +135,6 @@ class Config:
         Raises:
             ValueError: If required configuration is missing
         """
-        if not cls.LITELLM_MODEL:
-            raise ValueError(
-                "LITELLM_MODEL not set. Please set it in .aloop/config.\n"
-                "Example: LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022"
-            )
-
-        # Validate common providers (LiteLLM supports many; only enforce the ones we document).
-        provider = cls.LITELLM_MODEL.split("/", 1)[0].lower() if "/" in cls.LITELLM_MODEL else ""
-        if provider == "anthropic" and not cls.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY not set. Please set it in .aloop/config.")
-        if provider == "openai" and not cls.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY not set. Please set it in .aloop/config.")
-        if provider == "gemini" and not cls.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY not set. Please set it in .aloop/config.")
+        # Model configuration is handled by `.aloop/models.yaml` via ModelManager.
+        # `.aloop/config` is used for non-model runtime settings only.
+        return

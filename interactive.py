@@ -1,6 +1,7 @@
 """Interactive multi-turn conversation mode for the agent."""
 
 import json
+import shlex
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import aiofiles.os
 from rich.table import Table
 
 from config import Config
+from llm import ModelManager
 from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_exports_dir, get_history_file
@@ -31,6 +33,9 @@ class InteractiveSession:
         self.show_thinking = Config.TUI_SHOW_THINKING
         self.compact_mode = Config.TUI_COMPACT_MODE
 
+        # Use the agent's model manager to avoid divergence
+        self.model_manager = getattr(agent, "model_manager", None) or ModelManager()
+
         # Initialize TUI components
         self.input_handler = InputHandler(
             history_file=get_history_file(),
@@ -43,6 +48,7 @@ class InteractiveSession:
                 "theme",
                 "verbose",
                 "compact",
+                "model",
                 "exit",
                 "quit",
             ],
@@ -102,6 +108,19 @@ class InteractiveSession:
         )
         terminal_ui.console.print(
             f"  [{colors.primary}]/compact[/{colors.primary}]          - Toggle compact output mode"
+        )
+        terminal_ui.console.print(
+            f"  [{colors.primary}]/model[/{colors.primary}]            - Manage models (list/switch/add/edit/remove/default/show)"
+        )
+        terminal_ui.console.print(
+            f"    [{colors.text_muted}]/model                        - List models\n"
+            f"    /model <model_id>              - Switch model\n"
+            f"    /model add <model_id> key=value...    - Add model (e.g. name=... api_key=...)\n"
+            f"    /model edit <model_id> key=value...   - Edit model\n"
+            f"    /model remove <model_id>       - Remove model (not current)\n"
+            f"    /model default <model_id>      - Set default\n"
+            f"    /model show <model_id>         - Show model details\n"
+            f"    /model reload                  - Reload .aloop/models.yaml[/{colors.text_muted}]"
         )
         terminal_ui.console.print(
             f"  [{colors.primary}]/exit[/{colors.primary}]             - Exit interactive mode"
@@ -267,11 +286,14 @@ class InteractiveSession:
     def _update_status_bar(self) -> None:
         """Update status bar with current stats."""
         stats = self.agent.memory.get_stats()
+        model_info = self.agent.get_current_model_info()
+        model_name = model_info["name"] if model_info else ""
         self.status_bar.update(
             input_tokens=stats.get("total_input_tokens", 0),
             output_tokens=stats.get("total_output_tokens", 0),
             context_tokens=stats.get("current_tokens", 0),
             cost=stats.get("total_cost", 0),
+            model_name=model_name,
         )
 
     async def _handle_command(self, user_input: str) -> bool:
@@ -328,6 +350,9 @@ class InteractiveSession:
         elif command == "/compact":
             self._toggle_compact()
 
+        elif command == "/model":
+            await self._handle_model_command(user_input)
+
         else:
             colors = Theme.get_colors()
             terminal_ui.console.print(
@@ -339,6 +364,252 @@ class InteractiveSession:
 
         return True
 
+    def _show_models(self) -> None:
+        """Display available models and current selection."""
+        colors = Theme.get_colors()
+        profiles = self.model_manager.list_models()
+        current = self.model_manager.get_current_model()
+        default_model_id = self.model_manager.get_default_model_id()
+
+        terminal_ui.console.print(
+            f"\n[bold {colors.primary}]Available Models:[/bold {colors.primary}]\n"
+        )
+
+        if not profiles:
+            terminal_ui.print_error("No models configured.")
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Edit `.aloop/models.yaml` to add models and set `default`.[/{colors.text_muted}]\n"
+            )
+            return
+
+        for profile in profiles:
+            markers: list[str] = []
+            if current and profile.model_id == current.model_id:
+                markers.append(f"[{colors.success}]CURRENT[/{colors.success}]")
+            if default_model_id and profile.model_id == default_model_id:
+                markers.append(f"[{colors.primary}]DEFAULT[/{colors.primary}]")
+            marker = " ".join(markers) if markers else f"[{colors.text_muted}]      [/{colors.text_muted}]"
+
+            label = profile.display_name
+            if current and profile.model_id == current.model_id:
+                terminal_ui.console.print(
+                    f"  {marker} {label} - {profile.model_id}"
+                )
+            else:
+                terminal_ui.console.print(
+                    f"  {marker} {label} - {profile.model_id}"
+                )
+
+        terminal_ui.console.print(
+            f"\n[{colors.text_muted}]Use /model <model_id> to switch models[/{colors.text_muted}]\n"
+        )
+
+    def _switch_model(self, model_id: str) -> None:
+        """Switch to a different model.
+
+        Args:
+            model_id: LiteLLM model ID to switch to
+        """
+        colors = Theme.get_colors()
+
+        # Validate the profile
+        profile = self.model_manager.get_model(model_id)
+        if profile is None:
+            terminal_ui.print_error(f"Model '{model_id}' not found")
+            available = ", ".join(self.model_manager.get_model_ids())
+            if available:
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Available: {available}[/{colors.text_muted}]\n"
+                )
+            return
+
+        is_valid, error_msg = self.model_manager.validate_model(profile)
+        if not is_valid:
+            terminal_ui.print_error(error_msg)
+            return
+
+        # Perform the switch
+        if self.agent.switch_model(model_id):
+            new_profile = self.model_manager.get_current_model()
+            if new_profile:
+                terminal_ui.print_success(
+                    f"Switched to model: {new_profile.display_name} ({new_profile.model_id})"
+                )
+                self._update_status_bar()
+            else:
+                terminal_ui.print_error("Failed to get current model after switch")
+        else:
+            terminal_ui.print_error(f"Failed to switch to model '{model_id}'")
+
+    def _parse_kv_args(self, tokens: list[str]) -> tuple[dict[str, str], list[str]]:
+        kv: dict[str, str] = {}
+        rest: list[str] = []
+        for token in tokens:
+            if "=" in token:
+                k, _, v = token.partition("=")
+                kv[k.strip()] = v
+            else:
+                rest.append(token)
+        return kv, rest
+
+    def _mask_secret(self, value: Optional[str]) -> str:
+        if not value:
+            return "(not set)"
+        v = value.strip()
+        if len(v) <= 8:
+            return "*" * len(v)
+        return f"{v[:4]}…{v[-4:]}"
+
+    async def _handle_model_command(self, user_input: str) -> None:
+        """Handle the /model command.
+
+        Args:
+            user_input: Full user input string
+        """
+        colors = Theme.get_colors()
+
+        try:
+            parts = shlex.split(user_input)
+        except ValueError as e:
+            terminal_ui.print_error(str(e), title="Invalid /model command")
+            return
+
+        if len(parts) == 1:
+            self._show_models()
+            return
+
+        sub = parts[1]
+
+        if sub == "reload":
+            self.model_manager.reload()
+            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            current_after = self.model_manager.get_current_model()
+            if not current_after:
+                terminal_ui.print_error(
+                    "No models configured after reload. Edit `.aloop/models.yaml` and set `default`."
+                )
+                return
+
+            # Reinitialize LLM adapter to pick up updated api_key/api_base/timeout/drop_params.
+            self.agent.switch_model(current_after.model_id)
+            terminal_ui.print_info(f"Reload applied (current: {current_after.model_id}).")
+            return
+
+        if sub == "add":
+            if len(parts) < 3:
+                terminal_ui.print_error("Usage: /model add <model_id> [name=...] [api_key=...] ...")
+                return
+            model_id = parts[2]
+            kv, _ = self._parse_kv_args(parts[3:])
+            name = kv.pop("name", "")
+            api_key = kv.pop("api_key", None)
+            api_base = kv.pop("api_base", None)
+            timeout = kv.pop("timeout", None)
+            drop_params = kv.pop("drop_params", None)
+
+            timeout_value = 600
+            if timeout is not None:
+                try:
+                    timeout_value = int(str(timeout).strip())
+                except ValueError:
+                    terminal_ui.print_error("timeout must be an integer (seconds)")
+                    return
+
+            drop_params_value = True
+            if drop_params is not None:
+                v = str(drop_params).strip().lower()
+                if v in {"true", "1", "yes", "y", "on"}:
+                    drop_params_value = True
+                elif v in {"false", "0", "no", "n", "off"}:
+                    drop_params_value = False
+                else:
+                    terminal_ui.print_error("drop_params must be true/false")
+                    return
+
+            ok = self.model_manager.add_model(
+                model_id=model_id,
+                name=name,
+                api_key=api_key,
+                api_base=api_base,
+                timeout=timeout_value,
+                drop_params=drop_params_value,
+                **kv,
+            )
+            if not ok:
+                terminal_ui.print_error(f"Model '{model_id}' already exists (or invalid).")
+                return
+            terminal_ui.print_success(f"Added model: {model_id}")
+            return
+
+        if sub == "edit":
+            if len(parts) < 4:
+                terminal_ui.print_error("Usage: /model edit <model_id> <field=value> ...")
+                return
+            model_id = parts[2]
+            kv, rest = self._parse_kv_args(parts[3:])
+            if rest:
+                terminal_ui.print_error(f"Invalid args (expected key=value): {', '.join(rest)}")
+                return
+            ok = self.model_manager.edit_model(model_id, **kv)
+            if not ok:
+                terminal_ui.print_error(f"Model '{model_id}' not found")
+                return
+            terminal_ui.print_success(f"Updated model: {model_id}")
+            current = self.model_manager.get_current_model()
+            if current and current.model_id == model_id:
+                self.agent.switch_model(model_id)
+                terminal_ui.print_info("Updated current model configuration applied.")
+            return
+
+        if sub == "remove":
+            if len(parts) != 3:
+                terminal_ui.print_error("Usage: /model remove <model_id>")
+                return
+            model_id = parts[2]
+            current = self.model_manager.get_current_model()
+            if current and current.model_id == model_id:
+                terminal_ui.print_error("Cannot remove the current active model. Switch first.")
+                return
+            ok = self.model_manager.remove_model(model_id)
+            if not ok:
+                terminal_ui.print_error(f"Model '{model_id}' not found (or is current).")
+                return
+            terminal_ui.print_success(f"Removed model: {model_id}")
+            return
+
+        if sub == "default":
+            if len(parts) != 3:
+                terminal_ui.print_error("Usage: /model default <model_id>")
+                return
+            model_id = parts[2]
+            ok = self.model_manager.set_default(model_id)
+            if not ok:
+                terminal_ui.print_error(f"Model '{model_id}' not found")
+                return
+            terminal_ui.print_success(f"Set default model: {model_id}")
+            return
+
+        if sub == "show":
+            if len(parts) != 3:
+                terminal_ui.print_error("Usage: /model show <model_id>")
+                return
+            model_id = parts[2]
+            profile = self.model_manager.get_model(model_id)
+            if not profile:
+                terminal_ui.print_error(f"Model '{model_id}' not found")
+                return
+            terminal_ui.console.print(f"\n[bold {colors.primary}]Model:[/bold {colors.primary}] {model_id}")
+            terminal_ui.console.print(f"  Name: {profile.name or '(not set)'}")
+            terminal_ui.console.print(f"  Provider: {profile.provider}")
+            terminal_ui.console.print(f"  API key: {self._mask_secret(profile.api_key)}")
+            terminal_ui.console.print(f"  API base: {profile.api_base or '(not set)'}")
+            terminal_ui.console.print(f"  Timeout: {profile.timeout}")
+            terminal_ui.console.print(f"  Drop params: {profile.drop_params}\n")
+            return
+
+        # Otherwise treat as a model_id switch
+        self._switch_model(sub)
+
     async def run(self) -> None:
         """Run the interactive session loop."""
         # Print header
@@ -348,13 +619,9 @@ class InteractiveSession:
         )
 
         # Display configuration
+        current = self.model_manager.get_current_model()
         config_dict = {
-            "LLM Provider": (
-                Config.LITELLM_MODEL.split("/")[0].upper()
-                if "/" in Config.LITELLM_MODEL
-                else "UNKNOWN"
-            ),
-            "Model": Config.LITELLM_MODEL,
+            "Model": current.model_id if current else "NOT CONFIGURED",
             "Theme": Theme.get_theme_name(),
             "Commands": "/help for all commands",
         }

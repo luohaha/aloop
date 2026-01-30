@@ -8,8 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.react_agent import ReActAgent
-from config import Config
-from llm import LiteLLMAdapter
+from llm import LiteLLMAdapter, ModelManager
 from tools.calculator import CalculatorTool
 from tools.file_ops import FileReadTool, FileWriteTool
 from tools.web_search import WebSearchTool
@@ -21,19 +20,18 @@ async def main():
     print("ReAct Agent Example")
     print("=" * 60)
 
-    # Validate configuration
-    try:
-        Config.validate()
-    except ValueError as e:
-        print(f"Error: {e}")
-        print("Please configure .aloop/config (see README.md)")
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    if not profile:
+        print("No models configured. Edit .aloop/models.yaml and set `default`.")
         return
 
     llm = LiteLLMAdapter(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
+        model=profile.model_id,
+        api_key=profile.api_key,
+        api_base=profile.api_base,
+        drop_params=profile.drop_params,
+        timeout=profile.timeout,
     )
 
     # Initialize agent with tools
