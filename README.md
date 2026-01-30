@@ -68,17 +68,14 @@ Example `.aloop/models.yaml`:
 ```yaml
 models:
   openai/gpt-4o:
-    name: GPT-4o
     api_key: sk-...
     timeout: 300
 
   anthropic/claude-3-5-sonnet-20241022:
-    name: Claude 3.5 Sonnet
     api_key: sk-ant-...
 
   # Local model example
   ollama/llama2:
-    name: Local Llama
     api_base: http://localhost:11434
 
 default: openai/gpt-4o
@@ -95,11 +92,11 @@ MEMORY_ENABLED=true
 
 In interactive mode, use the `/model` command:
 ```bash
-# List available models
+# Pick a model
 /model
 
-# Switch to a specific model
-/model openai/gpt-4o
+# Or edit the config
+/model edit
 ```
 
 Or use the CLI flag:

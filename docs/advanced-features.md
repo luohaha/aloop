@@ -219,7 +219,6 @@ default: openai/gpt-4o
 # .aloop/models.yaml
 models:
   azure/gpt-4:
-    name: Azure GPT-4
     api_key: your_azure_key
     api_base: https://your-resource.openai.azure.com
     api_version: 2024-02-15-preview

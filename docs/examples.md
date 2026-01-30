@@ -94,7 +94,6 @@ What would you like me to help you with?
 # Add to .aloop/models.yaml:
 # models:
 #   openai/gpt-4o:
-#     name: GPT-4o
 #     api_key: your_key_here
 # default: openai/gpt-4o
 
@@ -108,7 +107,6 @@ python main.py --task "Your task here"
 # Add to .aloop/models.yaml:
 # models:
 #   gemini/gemini-1.5-flash:
-#     name: Gemini Flash
 #     api_key: your_key_here
 # default: gemini/gemini-1.5-flash
 
@@ -122,7 +120,6 @@ python main.py --task "Your task here"
 # Add to .aloop/models.yaml:
 # models:
 #   anthropic/claude-3-5-sonnet-20241022:
-#     name: Claude 3.5 Sonnet
 #     api_key: your_key_here
 # default: anthropic/claude-3-5-sonnet-20241022
 
@@ -322,7 +319,7 @@ MEMORY_ENABLED=true
 MEMORY_COMPRESSION_THRESHOLD=40000
 
 # Use more efficient models:
-# Edit `.aloop/models.yaml` and switch `default`, or use `/model <model_id>` in interactive mode.
+# Edit `.aloop/models.yaml` and switch `default`, or use `/model` (picker) in interactive mode.
 ```
 
 ### API Errors
