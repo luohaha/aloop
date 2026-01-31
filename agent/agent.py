@@ -1,5 +1,6 @@
 """ReAct (Reasoning + Acting) agent implementation."""
 
+from config import Config
 from llm import LLMMessage
 from utils import terminal_ui
 
@@ -146,13 +147,14 @@ When to use each approach:
 
         tools = self.tool_executor.get_tool_schemas()
 
-        # Use the generic ReAct loop implementation
-        result = await self._react_loop(
+        # Use ralph loop (outer verification wrapping the inner ReAct loop)
+        result = await self._ralph_loop(
             messages=[],  # Not used when use_memory=True
             tools=tools,
             use_memory=True,
             save_to_memory=True,
             task=task,
+            max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
         )
 
         self._print_memory_stats()
