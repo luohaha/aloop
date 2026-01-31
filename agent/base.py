@@ -371,9 +371,6 @@ class BaseAgent(ABC):
                 )
                 return result
 
-            # Print the incomplete result so the user can see what the agent produced
-            terminal_ui.print_unfinished_answer(result)
-
             # Inject feedback as a user message so the next _react_loop iteration
             # picks it up from memory.
             feedback = (
