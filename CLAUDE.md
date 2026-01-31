@@ -29,6 +29,14 @@ pre-commit install
 
 Never commit directly to `main`. All changes go through PR review.
 
+## Checkpoint Commits
+
+Prefer small, reviewable commits:
+- Before committing, run `./scripts/dev.sh check` (precommit + typecheck + tests).
+- Keep mechanical changes (formatting, renames) in their own commit when possible.
+- **Human-in-the-loop**: at key checkpoints, the agent should *ask* whether to `git commit` and/or `git push` (do not do it automatically).
+- Before asking to commit, show a short change summary (e.g. `git diff --stat`) and the `./scripts/dev.sh check` result.
+
 ## CI
 
 GitHub Actions runs `./scripts/dev.sh precommit`, `./scripts/dev.sh test -q`, and strict typecheck on PRs.
@@ -44,7 +52,7 @@ TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
 ```
 
 Manual doc/workflow checks:
-- README/AGENTS/docs: avoid legacy/removed commands (`LLM_PROVIDER`, `pip install -e`, `requirements.txt`, `setup.py`)
+- README/AGENTS/docs: avoid legacy/removed commands or env-based config; use current docs only
 - Docker examples use `--mode`/`--task`
 - Python 3.12+ + uv-only prerequisites documented consistently
 
@@ -53,7 +61,7 @@ Change impact reminders:
 - Config changes → update `docs/configuration.md`
 - Workflow scripts → update `AGENTS.md`, `docs/packaging.md`
 
-Run a quick smoke task (requires a configured provider in `.aloop/config`):
+Run a quick smoke task (requires a configured provider in `.aloop/models.yaml`):
 
 ```bash
 python main.py --task "Calculate 1+1"
@@ -122,7 +130,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 
 ## Docs Pointers
 
-- Configuration & `.aloop/config`: `docs/configuration.md`
+- Configuration & `.aloop/models.yaml`: `docs/configuration.md`
 - Packaging & release checklist: `docs/packaging.md`
 - Extending tools/agents: `docs/extending.md`
 - Memory system: `docs/memory-management.md`, `docs/memory_persistence.md`

@@ -1,6 +1,7 @@
 """Interactive multi-turn conversation mode for the agent."""
 
 import json
+import shlex
 from datetime import datetime
 from pathlib import Path
 
@@ -9,10 +10,17 @@ import aiofiles.os
 from rich.table import Table
 
 from config import Config
+from llm import ModelManager
 from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_exports_dir, get_history_file
 from utils.tui.input_handler import InputHandler
+from utils.tui.model_ui import (
+    mask_secret,
+    open_config_and_wait_for_save,
+    parse_kv_args,
+    pick_model_id,
+)
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
 
@@ -31,6 +39,9 @@ class InteractiveSession:
         self.show_thinking = Config.TUI_SHOW_THINKING
         self.compact_mode = Config.TUI_COMPACT_MODE
 
+        # Use the agent's model manager to avoid divergence
+        self.model_manager = getattr(agent, "model_manager", None) or ModelManager()
+
         # Initialize TUI components
         self.input_handler = InputHandler(
             history_file=get_history_file(),
@@ -43,6 +54,7 @@ class InteractiveSession:
                 "theme",
                 "verbose",
                 "compact",
+                "model",
                 "exit",
                 "quit",
             ],
@@ -102,6 +114,13 @@ class InteractiveSession:
         )
         terminal_ui.console.print(
             f"  [{colors.primary}]/compact[/{colors.primary}]          - Toggle compact output mode"
+        )
+        terminal_ui.console.print(
+            f"  [{colors.primary}]/model[/{colors.primary}]            - Manage models"
+        )
+        terminal_ui.console.print(
+            f"    [{colors.text_muted}]/model              - Pick model (cursor)\n"
+            f"    /model edit         - Edit `.aloop/models.yaml` (auto-reload on save)[/{colors.text_muted}]"
         )
         terminal_ui.console.print(
             f"  [{colors.primary}]/exit[/{colors.primary}]             - Exit interactive mode"
@@ -267,11 +286,14 @@ class InteractiveSession:
     def _update_status_bar(self) -> None:
         """Update status bar with current stats."""
         stats = self.agent.memory.get_stats()
+        model_info = self.agent.get_current_model_info()
+        model_name = model_info["name"] if model_info else ""
         self.status_bar.update(
             input_tokens=stats.get("total_input_tokens", 0),
             output_tokens=stats.get("total_output_tokens", 0),
             context_tokens=stats.get("current_tokens", 0),
             cost=stats.get("total_cost", 0),
+            model_name=model_name,
         )
 
     async def _handle_command(self, user_input: str) -> bool:
@@ -328,6 +350,9 @@ class InteractiveSession:
         elif command == "/compact":
             self._toggle_compact()
 
+        elif command == "/model":
+            await self._handle_model_command(user_input)
+
         else:
             colors = Theme.get_colors()
             terminal_ui.console.print(
@@ -339,6 +364,153 @@ class InteractiveSession:
 
         return True
 
+    def _show_models(self) -> None:
+        """Display available models and current selection."""
+        colors = Theme.get_colors()
+        profiles = self.model_manager.list_models()
+        current = self.model_manager.get_current_model()
+        default_model_id = self.model_manager.get_default_model_id()
+
+        terminal_ui.console.print(
+            f"\n[bold {colors.primary}]Available Models:[/bold {colors.primary}]\n"
+        )
+
+        if not profiles:
+            terminal_ui.print_error("No models configured.")
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Use /model edit (recommended) or edit `.aloop/models.yaml` manually.[/{colors.text_muted}]\n"
+            )
+            return
+
+        for i, profile in enumerate(profiles, start=1):
+            markers: list[str] = []
+            if current and profile.model_id == current.model_id:
+                markers.append(f"[{colors.success}]CURRENT[/{colors.success}]")
+            if default_model_id and profile.model_id == default_model_id:
+                markers.append(f"[{colors.primary}]DEFAULT[/{colors.primary}]")
+            marker = (
+                " ".join(markers)
+                if markers
+                else f"[{colors.text_muted}]      [/{colors.text_muted}]"
+            )
+
+            terminal_ui.console.print(
+                f"  {marker} [{colors.text_muted}]{i:>2}[/] {profile.model_id}"
+            )
+
+        terminal_ui.console.print(
+            f"\n[{colors.text_muted}]Tip: run /model to pick; /model edit to change config.[/]\n"
+        )
+
+    def _switch_model(self, model_id: str) -> None:
+        """Switch to a different model.
+
+        Args:
+            model_id: LiteLLM model ID to switch to
+        """
+        colors = Theme.get_colors()
+
+        # Validate the profile
+        profile = self.model_manager.get_model(model_id)
+        if profile is None:
+            terminal_ui.print_error(f"Model '{model_id}' not found")
+            available = ", ".join(self.model_manager.get_model_ids())
+            if available:
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Available: {available}[/{colors.text_muted}]\n"
+                )
+            return
+
+        is_valid, error_msg = self.model_manager.validate_model(profile)
+        if not is_valid:
+            terminal_ui.print_error(error_msg)
+            return
+
+        # Perform the switch
+        if self.agent.switch_model(model_id):
+            new_profile = self.model_manager.get_current_model()
+            if new_profile:
+                terminal_ui.print_success(f"Switched to model: {new_profile.model_id}")
+                self._update_status_bar()
+            else:
+                terminal_ui.print_error("Failed to get current model after switch")
+        else:
+            terminal_ui.print_error(f"Failed to switch to model '{model_id}'")
+
+    def _parse_kv_args(self, tokens: list[str]) -> tuple[dict[str, str], list[str]]:
+        return parse_kv_args(tokens)
+
+    def _mask_secret(self, value: str | None) -> str:
+        return mask_secret(value)
+
+    async def _handle_model_command(self, user_input: str) -> None:
+        """Handle the /model command.
+
+        Args:
+            user_input: Full user input string
+        """
+        colors = Theme.get_colors()
+
+        try:
+            parts = shlex.split(user_input)
+        except ValueError as e:
+            terminal_ui.print_error(str(e), title="Invalid /model command")
+            return
+
+        if len(parts) == 1:
+            if not self.model_manager.list_models():
+                terminal_ui.print_error("No models configured yet.")
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
+                )
+                return
+            picked = await pick_model_id(self.model_manager, title="Select Model")
+            if picked:
+                self._switch_model(picked)
+                return
+            return
+
+        sub = parts[1]
+
+        if sub == "edit":
+            if len(parts) != 2:
+                terminal_ui.print_error("Usage: /model edit")
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Edit the YAML directly instead of using subcommands.[/{colors.text_muted}]\n"
+                )
+                return
+
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Save the file to auto-reload (Ctrl+C to cancel)...[/]\n"
+            )
+            ok = await open_config_and_wait_for_save(self.model_manager.config_path)
+            if not ok:
+                terminal_ui.print_error(
+                    f"Could not open editor. Please edit `{self.model_manager.config_path}` manually."
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Tip: set EDITOR='code' (or similar) for /model edit.[/{colors.text_muted}]\n"
+                )
+                return
+
+            self.model_manager.reload()
+            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            current_after = self.model_manager.get_current_model()
+            if not current_after:
+                terminal_ui.print_error(
+                    "No models configured after reload. Edit `.aloop/models.yaml` and set `default`."
+                )
+                return
+
+            # Reinitialize LLM adapter to pick up updated api_key/api_base/timeout/drop_params.
+            self.agent.switch_model(current_after.model_id)
+            terminal_ui.print_info(f"Reload applied (current: {current_after.model_id}).")
+            return
+        terminal_ui.print_error("Unknown /model command.")
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
+        )
+
     async def run(self) -> None:
         """Run the interactive session loop."""
         # Print header
@@ -348,13 +520,9 @@ class InteractiveSession:
         )
 
         # Display configuration
+        current = self.model_manager.get_current_model()
         config_dict = {
-            "LLM Provider": (
-                Config.LITELLM_MODEL.split("/")[0].upper()
-                if "/" in Config.LITELLM_MODEL
-                else "UNKNOWN"
-            ),
-            "Model": Config.LITELLM_MODEL,
+            "Model": current.model_id if current else "NOT CONFIGURED",
             "Theme": Theme.get_theme_name(),
             "Commands": "/help for all commands",
         }
@@ -453,6 +621,180 @@ class InteractiveSession:
             terminal_ui.print_log_location(log_file)
 
 
+class ModelSetupSession:
+    """Lightweight interactive session for configuring models before the agent can run."""
+
+    def __init__(self, model_manager: ModelManager | None = None):
+        self.model_manager = model_manager or ModelManager()
+        self.input_handler = InputHandler(
+            history_file=get_history_file(),
+            commands=["help", "model", "continue", "start", "exit", "quit"],
+        )
+
+    def _show_help(self) -> None:
+        colors = Theme.get_colors()
+        terminal_ui.console.print(
+            f"\n[bold {colors.primary}]Model Setup[/bold {colors.primary}] "
+            f"[{colors.text_muted}](edit `.aloop/models.yaml`)[/{colors.text_muted}]\n"
+        )
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]Commands:[/{colors.text_muted}]\n"
+            f"  /model                              - Pick a model\n"
+            f"  /model edit                         - Open `.aloop/models.yaml` in editor\n"
+            f"  /continue                           - Validate and start agent\n"
+            f"  /exit                               - Quit\n"
+        )
+
+    def _show_models(self) -> None:
+        colors = Theme.get_colors()
+        models = self.model_manager.list_models()
+        current = self.model_manager.get_current_model()
+        default_model_id = self.model_manager.get_default_model_id()
+
+        terminal_ui.console.print(
+            f"\n[bold {colors.primary}]Configured Models:[/bold {colors.primary}]\n"
+        )
+
+        if not models:
+            terminal_ui.print_error("No models configured yet.")
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Use /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
+            )
+            return
+
+        for i, model in enumerate(models, start=1):
+            markers: list[str] = []
+            if current and model.model_id == current.model_id:
+                markers.append(f"[{colors.success}]CURRENT[/{colors.success}]")
+            if default_model_id and model.model_id == default_model_id:
+                markers.append(f"[{colors.primary}]DEFAULT[/{colors.primary}]")
+            marker = (
+                " ".join(markers)
+                if markers
+                else f"[{colors.text_muted}]      [/{colors.text_muted}]"
+            )
+            terminal_ui.console.print(f"  {marker} [{colors.text_muted}]{i:>2}[/] {model.model_id}")
+
+        terminal_ui.console.print()
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]Tip: run /model to pick; /model edit to change config.[/]\n"
+        )
+
+    def _parse_kv_args(self, tokens: list[str]) -> tuple[dict[str, str], list[str]]:
+        return parse_kv_args(tokens)
+
+    def _mask_secret(self, value: str | None) -> str:
+        return mask_secret(value)
+
+    async def _handle_model_command(self, user_input: str) -> None:
+        colors = Theme.get_colors()
+
+        try:
+            parts = shlex.split(user_input)
+        except ValueError as e:
+            terminal_ui.print_error(str(e), title="Invalid /model command")
+            return
+
+        if len(parts) == 1:
+            if not self.model_manager.list_models():
+                terminal_ui.print_error("No models configured yet.")
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
+                )
+                return
+            picked = await pick_model_id(self.model_manager, title="Select Model")
+            if picked:
+                self.model_manager.switch_model(picked)
+                terminal_ui.print_success(f"Selected model: {picked}")
+                return
+            return
+
+        sub = parts[1]
+
+        if sub == "edit":
+            if len(parts) != 2:
+                terminal_ui.print_error("Usage: /model edit")
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Edit the YAML directly instead of using subcommands.[/{colors.text_muted}]\n"
+                )
+                return
+
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Save the file to auto-reload (Ctrl+C to cancel)...[/]\n"
+            )
+            ok = await open_config_and_wait_for_save(self.model_manager.config_path)
+            if not ok:
+                terminal_ui.print_error(
+                    f"Could not open editor. Please edit `{self.model_manager.config_path}` manually."
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Tip: set EDITOR='code' (or similar) for /model edit.[/{colors.text_muted}]\n"
+                )
+                return
+            self.model_manager.reload()
+            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            self._show_models()
+            return
+        terminal_ui.print_error("Unknown /model command.")
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
+        )
+
+    async def run(self) -> bool:
+        colors = Theme.get_colors()
+        terminal_ui.print_header(
+            "Agentic Loop - Model Setup", subtitle="Configure `.aloop/models.yaml` to continue"
+        )
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]Tip: Use /model edit (recommended) then /continue.[/{colors.text_muted}]\n"
+        )
+        self._show_help()
+
+        while True:
+            user_input = await self.input_handler.prompt_async("> ")
+            if not user_input:
+                continue
+
+            # Allow typing model_id without the /model prefix.
+            if not user_input.startswith("/"):
+                user_input = f"/model {user_input}"
+
+            parts = user_input.split()
+            cmd = parts[0].lower()
+
+            if cmd in ("/exit", "/quit"):
+                return False
+
+            if cmd == "/help":
+                self._show_help()
+                continue
+
+            if cmd == "/model":
+                await self._handle_model_command(user_input)
+                continue
+
+            if cmd in ("/continue", "/start"):
+                current = self.model_manager.get_current_model()
+                if not current:
+                    terminal_ui.print_error(
+                        "No models configured. Use /model edit to configure `.aloop/models.yaml`."
+                    )
+                    continue
+
+                is_valid, error_msg = self.model_manager.validate_model(current)
+                if not is_valid:
+                    terminal_ui.print_error(error_msg)
+                    terminal_ui.console.print(
+                        f"[{colors.text_muted}]Fix the config and try /continue again.[/{colors.text_muted}]\n"
+                    )
+                    continue
+
+                terminal_ui.print_success("Model configuration looks good. Starting agent…")
+                return True
+
+            terminal_ui.print_error(f"Unknown command: {cmd}. Try /help.")
+
+
 async def run_interactive_mode(agent) -> None:
     """Run agent in interactive multi-turn conversation mode.
 
@@ -461,3 +803,9 @@ async def run_interactive_mode(agent) -> None:
     """
     session = InteractiveSession(agent)
     await session.run()
+
+
+async def run_model_setup_mode(model_manager: ModelManager | None = None) -> bool:
+    """Run model setup mode; returns True when ready to start agent."""
+    session = ModelSetupSession(model_manager=model_manager)
+    return await session.run()

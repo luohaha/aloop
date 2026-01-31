@@ -7,8 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.react_agent import ReActAgent
-from config import Config
-from llm import LiteLLMAdapter
+from llm import LiteLLMAdapter, ModelManager
 from tools.web_fetch import WebFetchTool
 
 
@@ -18,18 +17,18 @@ async def main():
     print("WebFetchTool Example")
     print("=" * 60)
 
-    try:
-        Config.validate()
-    except ValueError as exc:
-        print(f"Error: {exc}")
-        print("Please set your API key in .aloop/config")
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    if not profile:
+        print("No models configured. Edit .aloop/models.yaml and set `default`.")
         return
 
     llm = LiteLLMAdapter(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
+        model=profile.model_id,
+        api_key=profile.api_key,
+        api_base=profile.api_base,
+        drop_params=profile.drop_params,
+        timeout=profile.timeout,
     )
 
     agent = ReActAgent(

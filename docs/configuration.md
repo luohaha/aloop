@@ -1,86 +1,95 @@
 # Configuration Guide
 
-This repo uses a **single configuration surface** via `.aloop/config` and `config.py`.
+This repo uses YAML-based configuration for model management via `.aloop/models.yaml`.
+Model settings are not read from environment variables; use `.aloop/models.yaml` only.
 
-## Configuration File
+## Model Configuration
 
-On first run, `.aloop/config` is created automatically with sensible defaults. Edit it to configure your LLM provider:
+On first run, `.aloop/models.yaml` is created automatically with a template. Edit it to configure your LLM providers:
 
 ```bash
 # Open the config file
-$EDITOR .aloop/config
+$EDITOR .aloop/models.yaml
 ```
 
-## LLM Configuration (Recommended: LiteLLM)
+### YAML Configuration Format
 
-### Required
+```yaml
+# Model Configuration
+# This file is gitignored - do not commit to version control
 
-```bash
-# Format: provider/model_name
-LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
+models:
+  anthropic/claude-3-5-sonnet-20241022:
+    api_key: sk-ant-...
+    timeout: 600
+    drop_params: true
 
-# Set the key for your chosen provider
-ANTHROPIC_API_KEY=your_key_here
-OPENAI_API_KEY=
-GEMINI_API_KEY=
+  openai/gpt-4o:
+    api_key: sk-...
+    timeout: 300
+
+  ollama/llama2:
+    api_base: http://localhost:11434
+
+default: anthropic/claude-3-5-sonnet-20241022
 ```
 
-LiteLLM auto-detects which key is needed based on the `LITELLM_MODEL` prefix.
+### Configuration Fields
+
+The model ID (LiteLLM `provider/model`) is the key under `models`.
+
+| Field | Required | Description | Example |
+|-------|----------|-------------|---------|
+| `api_key` | Yes* | API key | `sk-ant-xxx` |
+| `api_base` | No | Custom base URL for proxies | `https://custom.api.com` |
+| `timeout` | No | Request timeout in seconds | `600` |
+| `drop_params` | No | Drop unsupported params | `true` |
+
+*Required for most providers except local ones like Ollama.
 
 ### Model Examples
 
-```bash
-# Anthropic
-LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
+```yaml
+# Anthropic Claude
+models:
+  anthropic/claude-3-5-sonnet-20241022:
+    api_key: sk-ant-...
 
-# OpenAI
-LITELLM_MODEL=openai/gpt-4o
+# OpenAI GPT
+models:
+  openai/gpt-4o:
+    api_key: sk-...
 
-# Gemini
-LITELLM_MODEL=gemini/gemini-1.5-pro
+# Google Gemini
+models:
+  gemini/gemini-1.5-pro:
+    api_key: ...
+
+# Local Ollama (no API key needed)
+models:
+  ollama/llama2:
+    api_base: http://localhost:11434
 ```
 
 For the full list of providers/models, see: https://docs.litellm.ai/docs/providers
 
-### Base URL (Optional)
+## Interactive Mode Commands
 
-Use this for proxies or custom endpoints:
+When running in interactive mode, you can manage models using the `/model` command:
 
+### Pick Model (Cursor)
 ```bash
-LITELLM_API_BASE=
+> /model
 ```
+Pick a model with arrow keys and Enter (Esc to cancel).
 
-### LiteLLM Behavior (Optional)
-
+### Edit Model Config
 ```bash
-LITELLM_DROP_PARAMS=true
-LITELLM_TIMEOUT=600
+> /model edit
 ```
+Open `.aloop/models.yaml` in your editor, then it will auto-reload after you save.
 
-## Tool Configuration
-
-```bash
-TOOL_TIMEOUT=600
-```
-
-### Legacy (Compatibility)
-
-This repo does not support legacy `LLM_PROVIDER` / `MODEL` configuration. Use `LITELLM_MODEL`.
-
-## Agent Configuration
-
-```bash
-MAX_ITERATIONS=100
-```
-
-## Memory Configuration
-
-```bash
-MEMORY_ENABLED=true
-MEMORY_COMPRESSION_THRESHOLD=25000
-MEMORY_SHORT_TERM_SIZE=100
-MEMORY_COMPRESSION_RATIO=0.3
-```
+Add/remove/default are done by editing `.aloop/models.yaml` directly.
 
 ## Email Notification Configuration (Resend)
 
@@ -93,30 +102,30 @@ NOTIFY_EMAIL_FROM=AgenticLoop <onboarding@resend.dev>
 
 ## Retry Configuration
 
+## CLI Usage
+
+You can specify a model when starting the agent:
+
 ```bash
-RETRY_MAX_ATTEMPTS=3
-RETRY_INITIAL_DELAY=1.0
-RETRY_MAX_DELAY=60.0
+# Use specific model for a single task
+python main.py --task "Calculate 1+1" --model openai/gpt-4o
+
+# Start interactive mode with specific model
+python main.py --model openai/gpt-4o
 ```
 
 ## Validation
 
 ```bash
-# Sanity check (requires correct API key for your model/provider)
+# Sanity check (requires correct API key for your model)
 python main.py --task "Calculate 1+1"
 
 # Run tests
 python -m pytest test/
 ```
 
-Integration tests that call a live LLM are skipped by default:
+## Security Notes
 
-```bash
-RUN_INTEGRATION_TESTS=1 python -m pytest -m integration
-```
-
-## Security Best Practices
-
-1. Never commit `.aloop/config` or API keys.
-2. Treat publishing as a manual step (see `docs/packaging.md`).
-3. Keep `MAX_ITERATIONS` low when experimenting to avoid runaway cost.
+- `.aloop/models.yaml` is automatically gitignored to prevent accidental commits of API keys
+- Keep your API keys secure and rotate them regularly
+- The YAML file permissions should be set to user-readable only (0600) on Unix systems

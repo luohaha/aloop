@@ -409,23 +409,29 @@ class MyProviderLLM(BaseLLM):
 
 ### 2. Update Configuration
 
-This repo is configured via LiteLLM (`LITELLM_MODEL` in `.aloop/config`). For most providers, **no code changes** are required:
+This repo is configured via LiteLLM using `.aloop/models.yaml`. For most providers, **no code changes** are required:
 
 ```bash
-LITELLM_MODEL=my_provider/my-model
-MY_PROVIDER_API_KEY=...
+# Add to .aloop/models.yaml:
+# models:
+#   my_provider/my-model:
+#     api_key: ...
+# default: my_provider/my-model
 ```
 
 If a provider is not supported by LiteLLM, implement a custom `BaseLLM` adapter under `llm/` and instantiate it directly in your app code (avoid adding more branching to `config.py`).
 
-### 4. Update .aloop/config
+### 4. Update `.aloop/models.yaml`
 
-Add your provider key to `.aloop/config`:
+Add your provider key to `.aloop/models.yaml`:
 
 ```bash
-# MyProvider Configuration
-MY_PROVIDER_API_KEY=your_api_key_here
-MY_PROVIDER_BASE_URL=  # Optional: custom API endpoint
+models:
+  my_provider/my-model:
+    api_key: your_api_key_here
+    api_base:  # Optional: custom API endpoint
+
+default: my_provider/my-model
 ```
 
 ## Testing Your Extensions
@@ -466,12 +472,13 @@ from llm import LiteLLMAdapter
 from config import Config
 
 async def test_my_agent():
-    llm = LiteLLMAdapter(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
-    )
+    from llm import ModelManager
+
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    assert profile is not None
+
+    llm = LiteLLMAdapter(model=profile.model_id, api_key=profile.api_key, api_base=profile.api_base)
 
     agent = MyCustomAgent(llm=llm)
     result = await agent.run("Test task")

@@ -6,8 +6,8 @@ import warnings
 
 from agent.react_agent import ReActAgent
 from config import Config
-from interactive import run_interactive_mode
-from llm import LiteLLMAdapter
+from interactive import run_interactive_mode, run_model_setup_mode
+from llm import LiteLLMAdapter, ModelManager
 from tools.advanced_file_ops import EditTool, GlobTool, GrepTool
 from tools.calculator import CalculatorTool
 from tools.code_navigator import CodeNavigatorTool
@@ -27,8 +27,11 @@ from utils.runtime import ensure_runtime_dirs
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
 
-def create_agent():
+def create_agent(model_id: str | None = None):
     """Factory function to create agents with tools.
+
+    Args:
+        model_id: Optional LiteLLM model ID to use (defaults to current/default)
 
     Returns:
         Configured ReActAgent instance with all tools
@@ -55,18 +58,48 @@ def create_agent():
         NotifyTool(),
     ]
 
-    # Create LLM instance with LiteLLM (retry config is read from Config directly)
+    # Initialize model manager
+    model_manager = ModelManager()
+
+    if not model_manager.is_configured():
+        raise ValueError(
+            "No models configured. Run `aloop` without --task and use /model edit, "
+            "or edit `.aloop/models.yaml` to add at least one model and set `default`."
+        )
+
+    # Get the model to use
+    if model_id:
+        profile = model_manager.get_model(model_id)
+        if profile:
+            model_manager.switch_model(model_id)
+        else:
+            available = ", ".join(model_manager.get_model_ids())
+            terminal_ui.print_error(f"Model '{model_id}' not found, using default")
+            if available:
+                terminal_ui.console.print(f"Available: {available}")
+
+    current_profile = model_manager.get_current_model()
+    if not current_profile:
+        raise ValueError("No model available. Please check `.aloop/models.yaml`.")
+
+    is_valid, error_msg = model_manager.validate_model(current_profile)
+    if not is_valid:
+        raise ValueError(error_msg)
+
+    # Create LLM instance with the current profile
     llm = LiteLLMAdapter(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
+        model=current_profile.model_id,
+        api_key=current_profile.api_key,
+        api_base=current_profile.api_base,
+        drop_params=current_profile.drop_params,
+        timeout=current_profile.timeout,
     )
 
     agent = ReActAgent(
         llm=llm,
         tools=tools,
         max_iterations=Config.MAX_ITERATIONS,
+        model_manager=model_manager,
     )
 
     # Add tools that require agent reference
@@ -91,6 +124,12 @@ def main():
         action="store_true",
         help="Enable verbose logging to .aloop/logs/",
     )
+    parser.add_argument(
+        "--model",
+        "-m",
+        type=str,
+        help="Model to use (LiteLLM model ID, e.g. openai/gpt-4o)",
+    )
 
     args = parser.parse_args()
 
@@ -108,8 +147,26 @@ def main():
         terminal_ui.print_error(str(e), title="Configuration Error")
         return
 
-    # Create agent
-    agent = create_agent()
+    # Create agent with optional model selection. If we're going into interactive mode and
+    # models aren't configured yet, enter a setup session first.
+    try:
+        agent = create_agent(model_id=args.model)
+    except ValueError as e:
+        if args.task:
+            terminal_ui.print_error(str(e), title="Model Configuration Error")
+            terminal_ui.console.print(
+                "Edit `.aloop/models.yaml` to add models and set `default` (this file is gitignored). "
+                "Tip: run `aloop` (interactive) and use /model edit."
+            )
+            return
+
+        terminal_ui.print_error(str(e), title="Model Setup Required")
+        ready = asyncio.run(run_model_setup_mode())
+        if not ready:
+            return
+
+        # Retry after setup.
+        agent = create_agent(model_id=args.model)
 
     async def _run() -> None:
         # If no task provided, enter interactive mode (default behavior)
@@ -125,13 +182,18 @@ def main():
             "🤖 Agentic Loop System", subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
         )
 
+        # Get current model info for display
+        model_info = agent.get_current_model_info()
+        if model_info:
+            model_display = model_info["model_id"]
+            provider_display = model_info["provider"].upper()
+        else:
+            model_display = "NOT CONFIGURED"
+            provider_display = "UNKNOWN"
+
         config_dict = {
-            "LLM Provider": (
-                Config.LITELLM_MODEL.split("/")[0].upper()
-                if "/" in Config.LITELLM_MODEL
-                else "UNKNOWN"
-            ),
-            "Model": Config.LITELLM_MODEL,
+            "LLM Provider": provider_display,
+            "Model": model_display,
             "Task": task if len(task) < 100 else task[:97] + "...",
         }
         terminal_ui.print_config(config_dict)
