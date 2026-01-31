@@ -14,6 +14,7 @@ from llm import ModelManager
 from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_exports_dir, get_history_file
+from utils.tui.command_registry import CommandRegistry, CommandSpec
 from utils.tui.input_handler import InputHandler
 from utils.tui.model_ui import (
     mask_secret,
@@ -43,21 +44,36 @@ class InteractiveSession:
         self.model_manager = getattr(agent, "model_manager", None) or ModelManager()
 
         # Initialize TUI components
+        self.command_registry = CommandRegistry(
+            commands=[
+                CommandSpec("help", "Show this help message"),
+                CommandSpec("clear", "Clear conversation memory and start fresh"),
+                CommandSpec("stats", "Show memory and token usage statistics"),
+                CommandSpec("history", "List saved conversation sessions"),
+                CommandSpec(
+                    "dump-memory",
+                    "Export a session's memory to a JSON file",
+                    args_hint="<id>",
+                ),
+                CommandSpec("theme", "Toggle between dark and light theme"),
+                CommandSpec("verbose", "Toggle verbose thinking display"),
+                CommandSpec("compact", "Toggle compact output mode"),
+                CommandSpec(
+                    "model",
+                    "Manage models",
+                    subcommands={
+                        "edit": CommandSpec(
+                            "edit",
+                            "Edit `.aloop/models.yaml` (auto-reload on save)",
+                        )
+                    },
+                ),
+                CommandSpec("exit", "Exit interactive mode"),
+            ]
+        )
         self.input_handler = InputHandler(
             history_file=get_history_file(),
-            commands=[
-                "help",
-                "clear",
-                "stats",
-                "history",
-                "dump-memory",
-                "theme",
-                "verbose",
-                "compact",
-                "model",
-                "exit",
-                "quit",
-            ],
+            command_registry=self.command_registry,
         )
 
         # Set up keyboard shortcut callbacks
@@ -91,49 +107,22 @@ class InteractiveSession:
         terminal_ui.console.print(
             f"\n[bold {colors.primary}]Available Commands:[/bold {colors.primary}]"
         )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/help[/{colors.primary}]             - Show this help message"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/clear[/{colors.primary}]            - Clear conversation memory and start fresh"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/stats[/{colors.primary}]            - Show memory and token usage statistics"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/history[/{colors.primary}]          - List all saved conversation sessions"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/dump-memory <id>[/{colors.primary}] - Export a session's memory to a JSON file"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/theme[/{colors.primary}]            - Toggle between dark and light theme"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/verbose[/{colors.primary}]          - Toggle verbose thinking display"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/compact[/{colors.primary}]          - Toggle compact output mode"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/model[/{colors.primary}]            - Manage models"
-        )
-        terminal_ui.console.print(
-            f"    [{colors.text_muted}]/model              - Pick model (cursor)\n"
-            f"    /model edit         - Edit `.aloop/models.yaml` (auto-reload on save)[/{colors.text_muted}]"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/exit[/{colors.primary}]             - Exit interactive mode"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/quit[/{colors.primary}]             - Same as /exit"
-        )
+        for cmd in self.command_registry.commands:
+            terminal_ui.console.print(
+                f"  [{colors.primary}]{cmd.display}[/{colors.primary}] - {cmd.description}"
+            )
+            if cmd.subcommands:
+                for sub_name, sub in cmd.subcommands.items():
+                    extra = f" {sub.args_hint}" if sub.args_hint else ""
+                    terminal_ui.console.print(
+                        f"    [{colors.text_muted}]/{cmd.name} {sub_name}{extra} - {sub.description}[/{colors.text_muted}]"
+                    )
 
         terminal_ui.console.print(
             f"\n[bold {colors.primary}]Keyboard Shortcuts:[/bold {colors.primary}]"
         )
         terminal_ui.console.print(
-            f"  [{colors.secondary}]Tab[/{colors.secondary}]        - Auto-complete commands"
+            f"  [{colors.secondary}]/[/{colors.secondary}]            - Show command suggestions"
         )
         terminal_ui.console.print(
             f"  [{colors.secondary}]Ctrl+C[/{colors.secondary}]     - Cancel current operation"
@@ -533,7 +522,7 @@ class InteractiveSession:
             f"\n[bold {colors.success}]Interactive mode started. Type your message or use commands.[/bold {colors.success}]"
         )
         terminal_ui.console.print(
-            f"[{colors.text_muted}]Tip: Press Tab for auto-complete, Ctrl+T to toggle thinking display[/{colors.text_muted}]\n"
+            f"[{colors.text_muted}]Tip: Type '/' for command suggestions, Ctrl+T to toggle thinking display[/{colors.text_muted}]\n"
         )
 
         # Show initial status bar
@@ -626,9 +615,22 @@ class ModelSetupSession:
 
     def __init__(self, model_manager: ModelManager | None = None):
         self.model_manager = model_manager or ModelManager()
+        self.command_registry = CommandRegistry(
+            commands=[
+                CommandSpec("help", "Show this help message"),
+                CommandSpec(
+                    "model",
+                    "Pick a model",
+                    subcommands={
+                        "edit": CommandSpec("edit", "Open `.aloop/models.yaml` in editor")
+                    },
+                ),
+                CommandSpec("exit", "Quit"),
+            ]
+        )
         self.input_handler = InputHandler(
             history_file=get_history_file(),
-            commands=["help", "model", "continue", "start", "exit", "quit"],
+            command_registry=self.command_registry,
         )
 
     def _show_help(self) -> None:
@@ -637,13 +639,17 @@ class ModelSetupSession:
             f"\n[bold {colors.primary}]Model Setup[/bold {colors.primary}] "
             f"[{colors.text_muted}](edit `.aloop/models.yaml`)[/{colors.text_muted}]\n"
         )
-        terminal_ui.console.print(
-            f"[{colors.text_muted}]Commands:[/{colors.text_muted}]\n"
-            f"  /model                              - Pick a model\n"
-            f"  /model edit                         - Open `.aloop/models.yaml` in editor\n"
-            f"  /continue                           - Validate and start agent\n"
-            f"  /exit                               - Quit\n"
-        )
+        terminal_ui.console.print(f"[{colors.text_muted}]Commands:[/{colors.text_muted}]\n")
+        for cmd in self.command_registry.commands:
+            terminal_ui.console.print(
+                f"  [{colors.primary}]{cmd.display}[/{colors.primary}] - {cmd.description}"
+            )
+            if cmd.subcommands:
+                for sub_name, sub in cmd.subcommands.items():
+                    extra = f" {sub.args_hint}" if sub.args_hint else ""
+                    terminal_ui.console.print(
+                        f"    [{colors.text_muted}]/{cmd.name} {sub_name}{extra} - {sub.description}[/{colors.text_muted}]"
+                    )
 
     def _show_models(self) -> None:
         colors = Theme.get_colors()
@@ -704,19 +710,10 @@ class ModelSetupSession:
                 return False
             picked = await pick_model_id(self.model_manager, title="Select Model")
             if picked:
+                self.model_manager.set_default(picked)
                 self.model_manager.switch_model(picked)
                 terminal_ui.print_success(f"Selected model: {picked}")
-                current = self.model_manager.get_current_model()
-                if current:
-                    is_valid, error_msg = self.model_manager.validate_model(current)
-                    if is_valid:
-                        terminal_ui.print_success("Model configuration looks good. Starting agent…")
-                        return True
-                    terminal_ui.print_error(error_msg)
-                    terminal_ui.console.print(
-                        f"[{colors.text_muted}]Fix the config and then run /continue.[/{colors.text_muted}]\n"
-                    )
-                return False
+                return self._maybe_ready_to_start()
             return False
 
         sub = parts[1]
@@ -744,20 +741,35 @@ class ModelSetupSession:
             self.model_manager.reload()
             terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
             self._show_models()
-            return False
+            return self._maybe_ready_to_start()
+
+        model_id = " ".join(parts[1:]).strip()
+        if model_id and self.model_manager.get_model(model_id):
+            self.model_manager.set_default(model_id)
+            self.model_manager.switch_model(model_id)
+            terminal_ui.print_success(f"Selected model: {model_id}")
+            return self._maybe_ready_to_start()
+
         terminal_ui.print_error("Unknown /model command.")
         terminal_ui.console.print(
             f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
         )
         return False
 
+    def _maybe_ready_to_start(self) -> bool:
+        current = self.model_manager.get_current_model()
+        if not current:
+            return False
+        is_valid, _ = self.model_manager.validate_model(current)
+        return is_valid and self.model_manager.is_configured()
+
     async def run(self) -> bool:
         colors = Theme.get_colors()
         terminal_ui.print_header(
-            "Agentic Loop - Model Setup", subtitle="Configure `.aloop/models.yaml` to continue"
+            "Agentic Loop - Model Setup", subtitle="Configure `.aloop/models.yaml` to start"
         )
         terminal_ui.console.print(
-            f"[{colors.text_muted}]Tip: Use /model edit (recommended) then /continue.[/{colors.text_muted}]\n"
+            f"[{colors.text_muted}]Tip: Use /model edit (recommended) to configure, or /model to pick.[/{colors.text_muted}]\n"
         )
         self._show_help()
 
@@ -774,7 +786,7 @@ class ModelSetupSession:
                     user_input = f"/model {user_input}"
                 else:
                     terminal_ui.print_error(
-                        "You're in model setup mode. Use /continue to start the agent, or /help.",
+                        "You're in model setup mode. Pick a model or run /model edit.",
                         title="Model Setup",
                     )
                     continue
@@ -792,28 +804,9 @@ class ModelSetupSession:
             if cmd == "/model":
                 ready = await self._handle_model_command(user_input)
                 if ready:
+                    terminal_ui.print_success("Model configuration looks good. Starting agent…")
                     return True
                 continue
-
-            if cmd in ("/continue", "/start"):
-                current = self.model_manager.get_current_model()
-                if not current:
-                    terminal_ui.print_error(
-                        "No models configured. Use /model edit to configure `.aloop/models.yaml`."
-                    )
-                    continue
-
-                is_valid, error_msg = self.model_manager.validate_model(current)
-                if not is_valid:
-                    terminal_ui.print_error(error_msg)
-                    terminal_ui.console.print(
-                        f"[{colors.text_muted}]Fix the config and try /continue again.[/{colors.text_muted}]\n"
-                    )
-                    continue
-
-                terminal_ui.print_success("Model configuration looks good. Starting agent…")
-                return True
-
             terminal_ui.print_error(f"Unknown command: {cmd}. Try /help.")
 
 
