@@ -416,7 +416,7 @@ Original messages ({count} messages, ~{tokens} tokens):
         orphaned_indices = list(pending_tool_uses.values())
 
         if orphaned_indices:
-            logger.warning(
+            logger.debug(
                 f"Found {len(orphaned_indices)} orphaned tool_use without matching tool_result - "
                 f"these will be preserved to wait for results"
             )

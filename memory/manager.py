@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from config import Config
 from llm.content_utils import content_has_tool_calls
 from llm.message_types import LLMMessage
+from utils import terminal_ui
+from utils.tui.progress import AsyncSpinner
 
 from .compressor import WorkingMemoryCompressor
 from .short_term import ShortTermMemory
@@ -299,13 +301,14 @@ class MemoryManager:
             if self._todo_context_provider:
                 todo_context = self._todo_context_provider()
 
-            # Perform compression
-            compressed = await self.compressor.compress(
-                messages,
-                strategy=strategy,
-                target_tokens=self._calculate_target_tokens(),
-                todo_context=todo_context,
-            )
+            # Perform compression with TUI spinner
+            async with AsyncSpinner(terminal_ui.console, "Compressing memory..."):
+                compressed = await self.compressor.compress(
+                    messages,
+                    strategy=strategy,
+                    target_tokens=self._calculate_target_tokens(),
+                    todo_context=todo_context,
+                )
 
             # Track compression results
             self.compression_count += 1
