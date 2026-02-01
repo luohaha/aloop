@@ -33,7 +33,6 @@ class InteractiveSession:
         self.agent = agent
         self.conversation_count = 0
         self.show_thinking = Config.TUI_SHOW_THINKING
-        self.compact_mode = Config.TUI_COMPACT_MODE
 
         # Use the agent's model manager to avoid divergence
         self.model_manager = getattr(agent, "model_manager", None) or ModelManager()
@@ -51,7 +50,8 @@ class InteractiveSession:
                 ),
                 CommandSpec("theme", "Toggle between dark and light theme"),
                 CommandSpec("verbose", "Toggle verbose thinking display"),
-                CommandSpec("compact", "Toggle compact output mode"),
+                CommandSpec("compact", "Compress conversation memory"),
+                CommandSpec("clean", "Clear conversation context and start fresh"),
                 CommandSpec(
                     "model",
                     "Manage models",
@@ -260,11 +260,18 @@ class InteractiveSession:
         status = "enabled" if self.show_thinking else "disabled"
         terminal_ui.print_info(f"Verbose thinking display {status}")
 
-    def _toggle_compact(self) -> None:
-        """Toggle compact output mode."""
-        self.compact_mode = not self.compact_mode
-        status = "enabled" if self.compact_mode else "disabled"
-        terminal_ui.print_info(f"Compact mode {status}")
+    async def _compact_memory(self) -> None:
+        """Compress conversation memory."""
+        result = await self.agent.memory.compress()
+        if result is None:
+            terminal_ui.print_info("Nothing to compress.")
+        else:
+            terminal_ui.print_success(
+                f"Compressed {result.original_message_count} messages: "
+                f"{result.original_tokens} → {result.compressed_tokens} tokens "
+                f"({result.savings_percentage:.0f}% saved)"
+            )
+        self._update_status_bar()
 
     def _update_status_bar(self) -> None:
         """Update status bar with current stats."""
@@ -322,7 +329,14 @@ class InteractiveSession:
             self._toggle_verbose()
 
         elif command == "/compact":
-            self._toggle_compact()
+            await self._compact_memory()
+
+        elif command == "/clean":
+            self.agent.memory.reset()
+            self.conversation_count = 0
+            self._update_status_bar()
+            terminal_ui.print_success("Conversation context cleared. Starting fresh.")
+            terminal_ui.console.print()
 
         elif command == "/model":
             await self._handle_model_command(user_input)
