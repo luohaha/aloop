@@ -1,6 +1,18 @@
-# Agentic Loop
+<div align="center">
+<pre>
+ █████╗ ██╗      ██████╗  ██████╗ ██████╗
+██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗
+███████║██║     ██║   ██║██║   ██║██████╔╝
+██╔══██║██║     ██║   ██║██║   ██║██╔═══╝
+██║  ██║███████╗╚██████╔╝╚██████╔╝██║
+╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝
+</pre>
 
-General-purpose AI agent with ReAct reasoning, tool use, and memory management. Supports 100+ LLM providers via LiteLLM.
+**General-purpose AI agent with ReAct reasoning, tool use, and memory management.**
+
+Supports 100+ LLM providers via LiteLLM.
+
+</div>
 
 ## Installation
 
