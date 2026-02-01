@@ -28,6 +28,9 @@ from .parser import (
 )
 from .types import CommandInfo, ResolvedInput, SkillInfo
 
+# System skills are bundled with aloop
+SYSTEM_SKILLS_DIR = Path(__file__).parent / "system"
+
 
 class SkillsRegistry:
     """Index and resolve skills + commands for aloop."""
@@ -41,7 +44,13 @@ class SkillsRegistry:
         commands_dir = root / ".aloop" / "commands"
         skills_dir = Path.home() / ".aloop" / "skills"
         self.commands = await self._load_commands(commands_dir)
+        # Load user skills first, then system skills (user skills take precedence)
         self.skills = await self._load_skills(skills_dir)
+        system_skills = await self._load_skills(SYSTEM_SKILLS_DIR)
+        # Only add system skills that don't conflict with user skills
+        for name, skill in system_skills.items():
+            if name not in self.skills:
+                self.skills[name] = skill
 
     async def _load_skills(self, skills_dir: Path) -> dict[str, SkillInfo]:
         results: dict[str, SkillInfo] = {}
