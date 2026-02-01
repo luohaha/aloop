@@ -59,7 +59,7 @@ def print_banner(subtitle: Optional[str] = None) -> None:
     colors = _get_colors()
     content = f"[bold {colors.primary}]{ALOOP_LOGO.lstrip(chr(10))}[/bold {colors.primary}]"
     tagline = subtitle or random.choice(TAGLINES)
-    content += f"\n\n[{colors.text_secondary}]{tagline}[/{colors.text_secondary}]"
+    content += f"\n\n[italic {colors.secondary}]{tagline}[/italic {colors.secondary}]"
 
     console.print(Panel(content, border_style=colors.primary, box=box.DOUBLE, padding=(1, 2)))
 
