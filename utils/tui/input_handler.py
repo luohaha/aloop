@@ -64,7 +64,7 @@ class CommandCompleter(Completer):
         """
         default_commands = [
             "help",
-            "clear",
+            "reset",
             "stats",
             "resume",
             "theme",
@@ -133,12 +133,12 @@ class CommandCompleter(Completer):
         """
         help_texts = {
             "help": "Show available commands",
-            "clear": "Clear conversation memory",
+            "reset": "Clear conversation memory",
             "stats": "Show token/memory stats",
             "resume": "List and resume a previous session",
             "theme": "Switch color theme",
             "verbose": "Toggle verbose output",
-            "compact": "Toggle compact mode",
+            "compact": "Compress conversation memory",
             "model": "Manage models",
             "model edit": "Edit `.aloop/models.yaml` (auto-reload on save)",
             "exit": "Exit interactive mode",
