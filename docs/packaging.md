@@ -26,14 +26,25 @@ aloop --task "Calculate 1+1"
 
 ## Publishing to PyPI
 
-### Test PyPI (recommended first)
+### Automated (recommended)
+
+Pushing a `v*` tag triggers the GitHub Actions release workflow, which runs the
+full test suite, builds the package, publishes to PyPI via Trusted Publisher, and
+creates a GitHub Release.
+
+```bash
+git tag v0.2.0
+git push --tags
+```
+
+### Manual — Test PyPI (recommended first)
 
 ```bash
 ./scripts/dev.sh publish --test
 pip install --index-url https://test.pypi.org/simple/ aloop
 ```
 
-### Production PyPI
+### Manual — Production PyPI
 
 ```bash
 ./scripts/dev.sh publish
@@ -77,12 +88,12 @@ docker push yourusername/aloop:latest
 ## Release Checklist
 
 1. Update version in `pyproject.toml`
-2. Run checks: `./scripts/dev.sh check`
-3. Build: `./scripts/dev.sh build`
-4. Test locally: `pip install dist/*.whl && aloop --task "Calculate 1+1"`
-5. Create git tag: `git tag v0.x.0 && git push --tags`
-6. Publish: `./scripts/dev.sh publish`
-7. Create GitHub release
+2. Update `CHANGELOG.md` (move items from `[Unreleased]` to the new version)
+3. Run checks: `./scripts/dev.sh check`
+4. Open a PR, get it merged to `main`
+5. Tag the release: `git tag v0.x.0 && git push --tags`
+6. GitHub Actions automatically: tests -> build -> publish to PyPI -> create GitHub Release
+7. Verify the release on [pypi.org](https://pypi.org/project/aloop/) and GitHub Releases
 
 ## Distribution Summary
 
