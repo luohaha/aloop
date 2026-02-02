@@ -190,6 +190,12 @@ class BaseAgent(ABC):
                     )
                 messages.append(assistant_msg)
 
+            # Print thinking/reasoning if available (for all responses)
+            if hasattr(self.llm, "extract_thinking"):
+                thinking = self.llm.extract_thinking(response)
+                if thinking:
+                    terminal_ui.print_thinking(thinking)
+
             # Check if we're done (no tool calls)
             if response.stop_reason == StopReason.STOP:
                 final_answer = self._extract_text(response)
@@ -198,18 +204,16 @@ class BaseAgent(ABC):
 
             # Execute tool calls
             if response.stop_reason == StopReason.TOOL_CALLS:
+                # Print assistant text content alongside tool calls
+                if response.content:
+                    terminal_ui.print_assistant_message(response.content)
+
                 tool_calls = self.llm.extract_tool_calls(response)
 
                 if not tool_calls:
                     # No tool calls found, return response
                     final_answer = self._extract_text(response)
                     return final_answer if final_answer else "No response generated."
-
-                # Print thinking/reasoning if available
-                if hasattr(self.llm, "extract_thinking"):
-                    thinking = self.llm.extract_thinking(response)
-                    if thinking:
-                        terminal_ui.print_thinking(thinking)
 
                 # Execute each tool call
                 tool_results = []
