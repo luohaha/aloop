@@ -37,8 +37,6 @@ git tag v0.2.0
 git push --tags
 ```
 
-See **Trusted Publisher Setup** below for one-time PyPI configuration.
-
 ### Manual — Test PyPI (recommended first)
 
 ```bash
@@ -53,20 +51,6 @@ pip install --index-url https://test.pypi.org/simple/ aloop
 ```
 
 `publish` is interactive by default and refuses to run without a TTY unless you pass `--yes`.
-
-## Trusted Publisher Setup (one-time)
-
-The release workflow uses [PyPI Trusted Publishers](https://docs.pypi.org/trusted-publishers/)
-so no API tokens are needed. Configure it once on pypi.org:
-
-1. Log in to [pypi.org](https://pypi.org) and navigate to the project settings.
-2. Go to **Publishing** > **Add a new publisher**.
-3. Select **GitHub** and fill in:
-   - Owner: `luohaha`
-   - Repository: `aloop`
-   - Workflow name: `release.yml`
-   - Environment: `release`
-4. Save. Subsequent tag pushes will authenticate automatically.
 
 ## Docker
 
