@@ -154,7 +154,39 @@ When to use each approach:
 - Medium task (3-5 steps) → Use todo list + sequential execution
 - Complex task (needs research) → Explore → Plan → Execute
 - Parallel workload → parallel_execute
-</complex_task_strategy>"""
+</complex_task_strategy>
+
+<long_term_memory>
+You have access to long-term memory that persists across sessions. Use it to learn and remember important information.
+
+WHEN TO SAVE (memory_save):
+- User states a preference ("I prefer...", "Always use...", "Never do...")
+- Project conventions are established ("This project uses...", "Our style is...")
+- An important decision is made with rationale
+- Information will likely be useful in future sessions
+
+WHEN TO RECALL (memory_recall):
+- Starting a new task in an existing project
+- Unsure about user preferences or conventions
+- Need to reference a previous decision
+- Looking for context about past work
+
+BEST PRACTICES:
+- Save specific, actionable information (not vague notes)
+- Include context (why something matters)
+- Recall at the start of tasks to check for relevant context
+- Don't save trivial or temporary information
+
+<good_example>
+User: "I prefer using pytest with verbose output"
+Action: memory_save with content="User prefers pytest over unittest, always use -v flag for verbose output" category="preferences"
+</good_example>
+
+<good_example>
+User: "Help me refactor this module"
+Action: First memory_recall with query="project conventions coding style" to check for saved preferences
+</good_example>
+</long_term_memory>"""
 
     async def run(self, task: str, verify: bool = True) -> str:
         """Execute ReAct loop until task is complete.

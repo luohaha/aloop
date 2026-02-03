@@ -39,6 +39,7 @@ dependencies = [
     "tree-sitter>=0.21.0,<0.22.0",
     "tree-sitter-languages>=1.8.0,<1.11.0",
     "croniter>=1.3.0",
+    "rapidfuzz>=3.0.0",
 ]
 
 [project.optional-dependencies]
