@@ -113,6 +113,13 @@ aloop --resume a1b2c3d4
 
 **Session persistence**: Conversations are saved as YAML files under `~/.aloop/sessions/`. Resume with `--resume` or `/resume`.
 
+## Features
+
+- **AGENTS.md support**: Project-specific instructions guide the agent automatically (see [AGENTS.md Guide](docs/agents-md-guide.md))
+- **Memory management**: Automatic compression and persistence of conversation history
+- **Ralph verification**: Self-verification loop for single tasks
+- **Tool-rich**: 18+ specialized tools for file ops, code navigation, web search, and more
+
 ## Tools
 
 | Tool | Description |
