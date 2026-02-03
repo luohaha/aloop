@@ -183,16 +183,16 @@ class TestShowStructure:
         result = await tool.execute(target=str(base_file), search_type="show_structure")
 
         # Check for imports section
-        assert "IMPORTS" in result
+        assert "Imports:" in result
         assert "import os" in result
         assert "from typing import" in result
 
         # Check for classes section
-        assert "CLASSES" in result
+        assert "Classes:" in result
         assert "BaseAgent" in result
 
         # Check for functions section
-        assert "FUNCTIONS" in result
+        assert "Functions:" in result
         assert "transform_task" in result
         assert "helper_function" in result
 
@@ -208,7 +208,7 @@ class TestShowStructure:
         base_file = sample_python_files / "base.py"
         result = await tool.execute(target=str(base_file), search_type="show_structure")
 
-        assert "Line" in result
+        assert "L" in result
 
 
 class TestFindUsages:
@@ -729,7 +729,7 @@ void printMessage(const std::string& msg) {
         result = await tool.execute(target=str(js_file), search_type="show_structure")
 
         assert "[javascript]" in result
-        assert "CLASSES" in result or "FUNCTIONS" in result
+        assert "Classes:" in result or "Functions:" in result
         assert "UserService" in result or "greet" in result
 
     async def test_show_structure_go(self, tool, multi_lang_files):
@@ -738,7 +738,7 @@ void printMessage(const std::string& msg) {
         result = await tool.execute(target=str(go_file), search_type="show_structure")
 
         assert "[go]" in result
-        assert "FUNCTIONS" in result
+        assert "Functions:" in result
         assert "main" in result or "greet" in result
 
     async def test_find_usages_cross_language(self, tool, multi_lang_files):

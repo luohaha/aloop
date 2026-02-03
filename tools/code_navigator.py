@@ -175,45 +175,13 @@ class CodeNavigatorTool(BaseTool):
     @property
     def description(self) -> str:
         langs = ", ".join(get_supported_languages()) if HAS_TREE_SITTER else "Python"
-        return f"""Fast code navigation using AST analysis (MUCH better than grep for code).
-
-This tool understands code structure and can quickly find definitions and usages.
-Supported languages: {langs}
-
-Search types:
-1. find_function: Find function definitions by name
-   - Returns: file path, line number, function signature, docstring
-   - Example: code_navigator(target="compress", search_type="find_function")
-
-2. find_class: Find class definitions by name
-   - Returns: file path, line number, base classes, methods list
-   - Example: code_navigator(target="BaseAgent", search_type="find_class")
-
-3. show_structure: Show structure of a specific file
-   - Returns: imports, classes, functions in tree format
-   - Example: code_navigator(target="agent/base.py", search_type="show_structure")
-
-4. find_usages: Find where a function/class is called or used
-   - Returns: all usage locations (file + line number + context)
-   - Example: code_navigator(target="_react_loop", search_type="find_usages")
-
-WHY USE THIS INSTEAD OF GREP:
-- 10x faster for finding code elements
-- Understands code structure (not just text matching)
-- Returns exact line numbers and signatures
-- No false positives from comments or strings
-- Can distinguish between definitions and usages
-
-WHEN TO USE:
-- Finding where a function is defined: use find_function
-- Finding where a class is defined: use find_class
-- Understanding file structure: use show_structure
-- Finding all places a function is called: use find_usages
-
-WHEN TO USE GREP INSTEAD:
-- Searching for string literals or text content
-- Finding TODO/FIXME comments
-- Searching in non-supported languages"""
+        return (
+            f"AST-based code navigation for {langs}. "
+            "Search types: find_function, find_class, show_structure, find_usages. "
+            "Use find_function/find_class to locate definitions, "
+            "show_structure for file overview, find_usages for references. "
+            "Prefer over grep for code elements; use grep for text/strings/comments."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -490,20 +458,21 @@ WHEN TO USE GREP INSTEAD:
         if not results:
             return f"No function named '{name}' found in {base_path}"
 
-        # Format results
-        output_parts = [f"Found {len(results)} function(s) named '{name}':\n"]
+        # Format results (concise format to reduce tokens)
+        lines = [f"Found {len(results)} function(s) named '{name}':"]
         for r in results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
-            output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
-            if r.get("decorators"):
-                output_parts.append(f"   Decorators: {', '.join(r['decorators'])}")
-            output_parts.append(f"   {r['signature']}")
+            decorators = (
+                f" | decorators: {', '.join(r['decorators'])}" if r.get("decorators") else ""
+            )
             doc = r["docstring"]
-            if len(doc) > 100:
-                doc = doc[:100] + "..."
-            output_parts.append(f'   "{doc}"\n')
-
-        return "\n".join(output_parts)
+            if len(doc) > 80:
+                doc = doc[:80] + "..."
+            lines.append(f"  {r['file']}:{r['line']}{lang_tag}{decorators}")
+            lines.append(f"    {r['signature']}")
+            if doc and doc != "(no docstring)":
+                lines.append(f'    "{doc}"')
+        return "\n".join(lines)
 
     async def _find_class(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
         """Find all class definitions matching the name."""
@@ -566,31 +535,27 @@ WHEN TO USE GREP INSTEAD:
         if not results:
             return f"No class named '{name}' found in {base_path}"
 
-        # Format results
-        output_parts = [f"Found {len(results)} class(es) named '{name}':\n"]
+        # Format results (concise format to reduce tokens)
+        lines = [f"Found {len(results)} class(es) named '{name}':"]
         for r in results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
-            output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
-            output_parts.append(
-                f"   class {name}({', '.join(r['bases']) if r['bases'] else 'object'})"
+            bases = f"({', '.join(r['bases'])})" if r.get("bases") else ""
+            decorators = (
+                f" | decorators: {', '.join(r['decorators'])}" if r.get("decorators") else ""
             )
-            if r.get("decorators"):
-                output_parts.append(f"   Decorators: {', '.join(r['decorators'])}")
-
             doc = r["docstring"]
-            if len(doc) > 100:
-                doc = doc[:100] + "..."
-            output_parts.append(f'   "{doc}"')
-
+            if len(doc) > 80:
+                doc = doc[:80] + "..."
+            lines.append(f"  {r['file']}:{r['line']}{lang_tag}{decorators}")
+            lines.append(f"    class {name}{bases}")
+            if doc and doc != "(no docstring)":
+                lines.append(f'    "{doc}"')
             if r.get("methods"):
-                output_parts.append(
-                    f"   Methods ({len(r['methods'])}): {', '.join(r['methods'][:10])}"
-                )
-                if len(r["methods"]) > 10:
-                    output_parts.append(f"            ... and {len(r['methods']) - 10} more")
-            output_parts.append("")
-
-        return "\n".join(output_parts)
+                methods_str = ", ".join(r["methods"][:8])
+                if len(r["methods"]) > 8:
+                    methods_str += f", +{len(r['methods']) - 8} more"
+                lines.append(f"    Methods: {methods_str}")
+        return "\n".join(lines)
 
     async def _show_structure(self, file_path: str) -> str:
         """Show the structure of a specific file."""
@@ -741,67 +706,49 @@ WHEN TO USE GREP INSTEAD:
             return f"Error parsing {path}: {str(e)}"
 
     def _format_structure_output(self, file_path: str, structure: Dict, lang: str) -> str:
-        """Format structure output."""
-        output_parts = [f"Structure of {file_path} [{lang}]:\n"]
+        """Format structure output (concise format to reduce tokens)."""
+        lines = [f"Structure of {file_path} [{lang}]:"]
 
         # Imports
         if structure["imports"]:
-            output_parts.append("📦 IMPORTS:")
-            for imp in structure["imports"][:20]:
+            lines.append("Imports:")
+            for imp in structure["imports"][:15]:
                 if imp.get("type") == "import":
-                    line = f"   Line {imp['line']}: import {imp['name']}"
-                    if imp.get("as"):
-                        line += f" as {imp['as']}"
+                    alias = f" as {imp['as']}" if imp.get("as") else ""
+                    lines.append(f"  L{imp['line']}: import {imp['name']}{alias}")
                 else:
-                    line = (
-                        f"   Line {imp['line']}: from {imp.get('module', '')} import {imp['name']}"
+                    alias = f" as {imp['as']}" if imp.get("as") else ""
+                    lines.append(
+                        f"  L{imp['line']}: from {imp.get('module', '')} import {imp['name']}{alias}"
                     )
-                    if imp.get("as"):
-                        line += f" as {imp['as']}"
-                output_parts.append(line)
-            if len(structure["imports"]) > 20:
-                output_parts.append(f"   ... and {len(structure['imports']) - 20} more imports")
-            output_parts.append("")
+            if len(structure["imports"]) > 15:
+                lines.append(f"  ... +{len(structure['imports']) - 15} more")
 
         # Classes
         if structure["classes"]:
-            output_parts.append("📘 CLASSES:")
+            lines.append("Classes:")
             for cls in structure["classes"]:
-                bases_str = f"({', '.join(cls['bases'])})" if cls.get("bases") else ""
-                output_parts.append(f"   Line {cls['line']}: class {cls['name']}{bases_str}")
-                if cls.get("docstring"):
-                    doc = cls["docstring"]
-                    if len(doc) > 60:
-                        doc = doc[:60] + "..."
-                    output_parts.append(f'      "{doc}"')
+                bases = f"({', '.join(cls['bases'])})" if cls.get("bases") else ""
+                lines.append(f"  L{cls['line']}: class {cls['name']}{bases}")
                 if cls.get("methods"):
-                    methods_str = ", ".join(m["name"] for m in cls["methods"][:5])
-                    if len(cls["methods"]) > 5:
-                        methods_str += f", ... (+{len(cls['methods']) - 5} more)"
-                    output_parts.append(f"      Methods: {methods_str}")
-                output_parts.append("")
+                    methods = ", ".join(m["name"] for m in cls["methods"][:6])
+                    if len(cls["methods"]) > 6:
+                        methods += f", +{len(cls['methods']) - 6}"
+                    lines.append(f"    Methods: {methods}")
 
         # Functions
         if structure["functions"]:
-            output_parts.append("🔧 FUNCTIONS:")
+            lines.append("Functions:")
             for func in structure["functions"]:
                 if lang == "python":
-                    output_parts.append(
-                        f"   Line {func['line']}: def {func['name']}({func['args']})"
-                    )
+                    lines.append(f"  L{func['line']}: def {func['name']}({func['args']})")
                 else:
-                    output_parts.append(f"   Line {func['line']}: {func['name']}")
-                if func.get("docstring"):
-                    doc = func["docstring"]
-                    if len(doc) > 60:
-                        doc = doc[:60] + "..."
-                    output_parts.append(f'      "{doc}"')
-            output_parts.append("")
+                    lines.append(f"  L{func['line']}: {func['name']}")
 
         if not structure["imports"] and not structure["classes"] and not structure["functions"]:
-            output_parts.append("(File appears to be empty or contains only statements)")
+            lines.append("(empty or statements only)")
 
-        return "\n".join(output_parts)
+        return "\n".join(lines)
 
     async def _find_usages(self, name: str, base_path: Path, language: Optional[str] = None) -> str:
         """Find where a function or class is used (called)."""
@@ -910,21 +857,20 @@ WHEN TO USE GREP INSTEAD:
         else:
             truncated = False
 
-        # Format results
-        output_parts = [f"Found {len(seen)} usage(s) of '{name}':\n"]
+        # Format results (concise format to reduce tokens)
+        lines = [f"Found {len(seen)} usage(s) of '{name}':"]
 
         for r in unique_results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
-            output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
             context = str(r["context"])
-            if len(context) > 80:
-                context = context[:80] + "..."
-            output_parts.append(f"   {context}\n")
+            if len(context) > 70:
+                context = context[:70] + "..."
+            lines.append(f"  {r['file']}:{r['line']}{lang_tag}: {context}")
 
         if truncated:
-            output_parts.append(f"... (showing first 50 of {len(seen)} usages)")
+            lines.append(f"... (showing first 50 of {len(seen)} usages)")
 
-        return "\n".join(output_parts)
+        return "\n".join(lines)
 
     # Helper methods
 
