@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-02-04
+
+### Added
+
+- AGENTS.md support with on-demand reading for agent context
+
+### Changed
+
+- Refactor tool outputs to remove emoji and redundant text
+- Remove redundant and unused tools for cleaner codebase
+
 ## [0.1.1] - 2026-02-02
 
 ### Fixed
