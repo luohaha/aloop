@@ -44,7 +44,7 @@ async def git_store(tmp_path):
 def sample_memories():
     """Sample memories for testing."""
     return {
-        MemoryCategory.DECISIONS: ["Use async-first architecture", "Choose YAML over SQLite"],
-        MemoryCategory.PREFERENCES: ["Prefer type hints everywhere"],
-        MemoryCategory.FACTS: ["Project uses Python 3.12+"],
+        MemoryCategory.DECISIONS: "- Use async-first architecture\n- Choose YAML over SQLite\n",
+        MemoryCategory.PREFERENCES: "- Prefer type hints everywhere\n",
+        MemoryCategory.FACTS: "- Project uses Python 3.12+\n",
     }

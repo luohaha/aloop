@@ -1,7 +1,7 @@
 """Git-backed store for long-term memory.
 
-Memory files live in ~/.aloop/memory/ as YAML files, managed by a local git repo
-for change tracking and concurrency detection.
+Memory files live in ~/.aloop/memory/ as markdown files, managed by a local
+git repo for change tracking and concurrency detection.
 """
 
 import asyncio
@@ -11,8 +11,6 @@ import shutil
 import subprocess
 from enum import Enum
 from typing import Optional
-
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +24,10 @@ class MemoryCategory(str, Enum):
 
 
 class GitMemoryStore:
-    """Git-backed store for long-term memory YAML files.
+    """Git-backed store for long-term memory markdown files.
 
-    Handles repo initialization, reading YAML files, HEAD-based change detection,
-    and saving + committing (used only by the consolidator).
-    Agent writes are done directly via file/shell tools.
+    Each category is a free-form markdown file.  The agent decides the
+    content and structure; the store just reads/writes raw text.
     """
 
     def __init__(self, memory_dir: Optional[str] = None):
@@ -70,42 +67,32 @@ class GitMemoryStore:
     # Read
     # ------------------------------------------------------------------
 
-    async def load_all(self) -> dict[MemoryCategory, list[str]]:
-        """Read all category YAML files and snapshot the HEAD hash.
+    async def load_all(self) -> dict[MemoryCategory, str]:
+        """Read all category markdown files and snapshot the HEAD hash.
 
         Returns:
-            Mapping of category to list of memory entry strings.
+            Mapping of category to file content (empty string if missing).
         """
         await self.ensure_repo()
         self._loaded_head = await self.get_current_head()
 
-        memories: dict[MemoryCategory, list[str]] = {}
+        memories: dict[MemoryCategory, str] = {}
         for cat in MemoryCategory:
-            path = os.path.join(self.memory_dir, f"{cat.value}.yaml")
-            entries = await asyncio.to_thread(self._read_yaml, path)
-            memories[cat] = entries
+            path = os.path.join(self.memory_dir, f"{cat.value}.md")
+            memories[cat] = await asyncio.to_thread(self._read_file, path)
         return memories
 
     @staticmethod
-    def _read_yaml(path: str) -> list[str]:
-        """Synchronously read a memory YAML file.
-
-        Expected schema — a plain YAML list::
-
-            - "some memory"
-            - "another memory"
-        """
+    def _read_file(path: str) -> str:
+        """Synchronously read a memory file as raw text."""
         if not os.path.isfile(path):
-            return []
+            return ""
         try:
             with open(path, encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-            if not isinstance(data, list):
-                return []
-            return [str(e) for e in data if e]
+                return f.read()
         except Exception:
             logger.warning("Failed to read memory file %s", path, exc_info=True)
-            return []
+            return ""
 
     # ------------------------------------------------------------------
     # Write (used by consolidator only)
@@ -113,7 +100,7 @@ class GitMemoryStore:
 
     async def save_and_commit(
         self,
-        memories: dict[MemoryCategory, list[str]],
+        memories: dict[MemoryCategory, str],
         message: str,
     ) -> None:
         """Write all category files and create a git commit.
@@ -124,9 +111,9 @@ class GitMemoryStore:
         await self.ensure_repo()
 
         for cat in MemoryCategory:
-            path = os.path.join(self.memory_dir, f"{cat.value}.yaml")
-            entries = memories.get(cat, [])
-            await asyncio.to_thread(self._write_yaml, path, entries)
+            path = os.path.join(self.memory_dir, f"{cat.value}.md")
+            content = memories.get(cat, "")
+            await asyncio.to_thread(self._write_file, path, content)
 
         await self._run_git("add", "-A")
 
@@ -142,10 +129,10 @@ class GitMemoryStore:
         await self._run_git("commit", "-m", message)
 
     @staticmethod
-    def _write_yaml(path: str, entries: list[str]) -> None:
-        """Synchronously write a memory YAML file."""
+    def _write_file(path: str, content: str) -> None:
+        """Synchronously write a memory file."""
         with open(path, "w", encoding="utf-8") as f:
-            yaml.dump(entries, f, default_flow_style=False, allow_unicode=True)
+            f.write(content)
 
     # ------------------------------------------------------------------
     # Helpers

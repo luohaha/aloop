@@ -19,14 +19,12 @@ __all__ = ["LongTermMemoryManager", "MemoryCategory"]
 _INSTRUCTION_TEMPLATE = """\
 <long_term_memory_management>
 You have a persistent long-term memory stored in {memory_dir}.
-Memory files are YAML formatted and organized by category:
-- decisions.yaml: Key decisions and their rationale
-- preferences.yaml: User preferences, coding style, workflow habits
-- facts.yaml: Factual info about projects, environments, tools
+Memory files are markdown, organized by category:
+- decisions.md: Key decisions and their rationale
+- preferences.md: User preferences, coding style, workflow habits
+- facts.md: Factual info about projects, environments, tools
 
-CURRENT MEMORIES (loaded at startup):
-{formatted_memories}
-
+{formatted_memories}\
 WHEN TO UPDATE MEMORY:
 - User expresses a preference or habit
 - An important decision is made with clear rationale
@@ -34,13 +32,13 @@ WHEN TO UPDATE MEMORY:
 - User explicitly asks you to remember something
 
 HOW TO UPDATE MEMORY:
-1. Read the target YAML file, add your new entry (keep the plain-list YAML format), and write it back.
+1. Edit the target .md file with your new content.
 2. Commit the change with git so it persists across sessions.
 
 RULES:
 - Be selective — only store information useful across FUTURE sessions
-- Be concise — each entry should be a single clear statement
-- Don't duplicate existing memories listed above
+- Be concise
+- Don't duplicate existing memories
 - Don't store transient task details (specific file edits, debugging steps)
 </long_term_memory_management>"""
 
@@ -71,7 +69,7 @@ class LongTermMemoryManager:
         except Exception:
             logger.warning("Failed to load long-term memory", exc_info=True)
             # Return template with empty memories so agent can still create new ones
-            memories = {cat: [] for cat in MemoryCategory}
+            memories = {cat: "" for cat in MemoryCategory}
 
         # Consolidate if over threshold
         try:
@@ -104,15 +102,16 @@ class LongTermMemoryManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _format_memories(memories: dict[MemoryCategory, list[str]]) -> str:
-        """Format memories for embedding in the instruction template."""
+    def _format_memories(memories: dict[MemoryCategory, str]) -> str:
+        """Format memories for embedding in the instruction template.
+
+        Only includes non-empty categories to save tokens.
+        """
         parts: list[str] = []
         for cat in MemoryCategory:
-            entries = memories.get(cat, [])
-            header = f"[{cat.value}]"
-            if entries:
-                lines = "\n".join(f"  - {e}" for e in entries)
-                parts.append(f"{header}\n{lines}")
-            else:
-                parts.append(f"{header}\n  (none)")
-        return "\n".join(parts)
+            content = memories.get(cat, "").strip()
+            if content:
+                parts.append(f"CURRENT MEMORIES [{cat.value}]:\n{content}")
+        if parts:
+            return "\n\n".join(parts) + "\n\n"
+        return ""

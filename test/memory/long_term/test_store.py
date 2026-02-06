@@ -21,7 +21,7 @@ class TestGitMemoryStore:
     async def test_load_all_empty(self, git_store):
         memories = await git_store.load_all()
         for cat in MemoryCategory:
-            assert memories[cat] == []
+            assert memories[cat] == ""
 
     async def test_save_and_load_roundtrip(self, git_store, sample_memories):
         await git_store.save_and_commit(sample_memories, "test commit")
@@ -52,9 +52,9 @@ class TestGitMemoryStore:
 
         # Simulate another agent committing
         updated = {
-            MemoryCategory.DECISIONS: ["new decision"],
-            MemoryCategory.PREFERENCES: [],
-            MemoryCategory.FACTS: [],
+            MemoryCategory.DECISIONS: "- new decision\n",
+            MemoryCategory.PREFERENCES: "",
+            MemoryCategory.FACTS: "",
         }
         await git_store.save_and_commit(updated, "external change")
         assert await git_store.has_changed_since_load()
@@ -68,29 +68,19 @@ class TestGitMemoryStore:
         head_after = await git_store.get_current_head()
         assert head_before == head_after
 
-    async def test_read_yaml_malformed(self, git_store):
-        """Malformed YAML should return empty list instead of crashing."""
-        import os
-
-        import aiofiles
-
-        bad_path = os.path.join(git_store.memory_dir, "decisions.yaml")
-        async with aiofiles.open(bad_path, "w") as f:
-            await f.write("not: valid: yaml: [[[")
-
+    async def test_read_nonexistent_file(self, git_store):
+        """Missing files should return empty string."""
         memories = await git_store.load_all()
-        # Should not raise; decisions will be empty or partially parsed
-        assert isinstance(memories[MemoryCategory.DECISIONS], list)
+        assert memories[MemoryCategory.DECISIONS] == ""
 
-    async def test_read_yaml_wrong_schema(self, git_store):
-        """YAML that is a dict (not a list) should return empty list."""
-        import os
-
-        import aiofiles
-
-        path = os.path.join(git_store.memory_dir, "facts.yaml")
-        async with aiofiles.open(path, "w") as f:
-            await f.write("foo: bar\n")
-
-        memories = await git_store.load_all()
-        assert memories[MemoryCategory.FACTS] == []
+    async def test_read_arbitrary_content(self, git_store):
+        """Store preserves arbitrary markdown content."""
+        content = "# My Decisions\n\nWe chose React for the frontend.\n"
+        memories = {
+            MemoryCategory.DECISIONS: content,
+            MemoryCategory.PREFERENCES: "",
+            MemoryCategory.FACTS: "",
+        }
+        await git_store.save_and_commit(memories, "test")
+        loaded = await git_store.load_all()
+        assert loaded[MemoryCategory.DECISIONS] == content

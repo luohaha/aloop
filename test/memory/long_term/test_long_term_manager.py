@@ -15,12 +15,12 @@ class TestLongTermMemoryManager:
         assert result is not None
         assert "<long_term_memory_management>" in result
         assert "</long_term_memory_management>" in result
-        assert "(none)" in result  # all categories empty
+        # No CURRENT MEMORIES section when everything is empty
+        assert "CURRENT MEMORIES" not in result
         assert str(tmp_path / "mem") in result  # memory_dir injected
 
     async def test_load_and_format_with_entries(self, tmp_path, mock_ltm_llm, sample_memories):
         manager = LongTermMemoryManager(mock_ltm_llm, memory_dir=str(tmp_path / "mem"))
-        # Pre-populate via store
         await manager.store.save_and_commit(sample_memories, "seed")
 
         result = await manager.load_and_format()
@@ -33,24 +33,19 @@ class TestLongTermMemoryManager:
     ):
         from config import Config
 
-        # Set very low threshold to force consolidation
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 1)
 
         mock_ltm_llm.response_text = (
-            "decisions:\n"
-            '  - "consolidated decision"\n'
-            "preferences:\n"
-            '  - "consolidated pref"\n'
-            "facts:\n"
-            '  - "consolidated fact"\n'
+            "## decisions\n- consolidated decision\n\n"
+            "## preferences\n- consolidated pref\n\n"
+            "## facts\n- consolidated fact\n"
         )
 
         manager = LongTermMemoryManager(mock_ltm_llm, memory_dir=str(tmp_path / "mem"))
-        # Seed with enough data
         big_memories = {
-            MemoryCategory.DECISIONS: [f"decision {i}" for i in range(20)],
-            MemoryCategory.PREFERENCES: [f"pref {i}" for i in range(20)],
-            MemoryCategory.FACTS: [f"fact {i}" for i in range(20)],
+            MemoryCategory.DECISIONS: "\n".join(f"- decision {i}" for i in range(20)) + "\n",
+            MemoryCategory.PREFERENCES: "\n".join(f"- pref {i}" for i in range(20)) + "\n",
+            MemoryCategory.FACTS: "\n".join(f"- fact {i}" for i in range(20)) + "\n",
         }
         await manager.store.save_and_commit(big_memories, "seed")
 
@@ -78,7 +73,7 @@ class TestLongTermMemoryManager:
 
         # Simulate external change
         await manager.store.save_and_commit(
-            {cat: ["changed"] for cat in MemoryCategory},
+            {cat: "changed\n" for cat in MemoryCategory},
             "external",
         )
         assert await manager.has_changed_since_load()
@@ -88,18 +83,17 @@ class TestLongTermMemoryManager:
         manager = LongTermMemoryManager(mock_ltm_llm, memory_dir=path)
         assert manager.memory_dir == path
 
-    async def test_format_memories_all_categories(self, tmp_path, mock_ltm_llm):
-        """Verify the formatted output includes all category headers."""
+    async def test_format_memories_skips_empty(self, tmp_path, mock_ltm_llm):
+        """Empty categories should not appear in formatted output (save tokens)."""
         result = LongTermMemoryManager._format_memories(
             {
-                MemoryCategory.DECISIONS: ["d1"],
-                MemoryCategory.PREFERENCES: [],
-                MemoryCategory.FACTS: ["f1", "f2"],
+                MemoryCategory.DECISIONS: "- d1\n",
+                MemoryCategory.PREFERENCES: "",
+                MemoryCategory.FACTS: "- f1\n- f2\n",
             }
         )
         assert "[decisions]" in result
-        assert "[preferences]" in result
         assert "[facts]" in result
+        assert "preferences" not in result  # empty, should be omitted
         assert "d1" in result
-        assert "(none)" in result  # empty preferences
         assert "f2" in result
