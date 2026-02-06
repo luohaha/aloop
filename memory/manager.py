@@ -202,17 +202,8 @@ class MemoryManager:
                 f"API usage: input={input_tokens}, output={output_tokens}, "
                 f"total={input_tokens + output_tokens}"
             )
-        else:
-            # Estimate token count for non-API messages (tool results, etc.)
-            provider = self.llm.provider_name.lower()
-            model = self.llm.model
-            tokens = self.token_tracker.count_message_tokens(message, provider, model)
-
-            # Update token tracker
-            if message.role == "assistant":
-                self.token_tracker.add_output_tokens(tokens)
-            else:
-                self.token_tracker.add_input_tokens(tokens)
+        # Non-API messages (user, tool results) are not tracked here — their
+        # tokens will be counted in the next API call's response.usage.input_tokens.
 
         # Add to short-term memory
         self.short_term.add_message(message)

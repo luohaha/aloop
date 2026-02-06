@@ -389,6 +389,40 @@ class TestEdgeCases:
         assert stats["total_input_tokens"] >= 100
         assert stats["total_output_tokens"] >= 50
 
+    async def test_non_api_messages_do_not_accumulate_tokens(self, mock_llm):
+        """Non-API messages should not increase total_input/output_tokens.
+
+        Their tokens are already included in the next API call's
+        response.usage.input_tokens, so counting them separately would
+        double-count.
+        """
+        manager = MemoryManager(mock_llm)
+
+        # Add user and tool-result messages (no actual_tokens)
+        await manager.add_message(LLMMessage(role="user", content="Hello"))
+        await manager.add_message(
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "result"},
+                ],
+            )
+        )
+
+        stats = manager.get_stats()
+        assert stats["total_input_tokens"] == 0
+        assert stats["total_output_tokens"] == 0
+
+        # Now add an API message — only its reported tokens should count
+        await manager.add_message(
+            LLMMessage(role="assistant", content="Response"),
+            actual_tokens={"input": 500, "output": 80},
+        )
+
+        stats = manager.get_stats()
+        assert stats["total_input_tokens"] == 500
+        assert stats["total_output_tokens"] == 80
+
     async def test_compression_with_mixed_content(self, set_memory_config, mock_llm):
         """Test compression with mixed text and tool content."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
