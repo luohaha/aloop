@@ -48,6 +48,9 @@ class GitMemoryStore:
         git_dir = os.path.join(self.memory_dir, ".git")
         if not os.path.isdir(git_dir):
             await self._run_git("init")
+            # Ensure commits work even without a global git config
+            await self._run_git("config", "user.name", "aloop")
+            await self._run_git("config", "user.email", "aloop@local")
             logger.info("Initialized long-term memory git repo at %s", self.memory_dir)
 
     async def get_current_head(self) -> Optional[str]:
