@@ -96,6 +96,12 @@ class Config:
     MEMORY_COMPRESSION_RATIO = float(_cfg.get("MEMORY_COMPRESSION_RATIO", "0.3"))
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
+    # Long-term Memory
+    LONG_TERM_MEMORY_ENABLED = _cfg.get("LONG_TERM_MEMORY_ENABLED", "true").lower() == "true"
+    LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD = int(
+        _cfg.get("LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", "5000")
+    )
+
     # Logging Configuration
     # Note: Logging is now controlled via --verbose flag
     # LOG_DIR is now ~/.aloop/logs/ (see utils.runtime)

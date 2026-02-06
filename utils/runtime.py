@@ -48,6 +48,15 @@ def get_log_dir() -> str:
     return os.path.join(RUNTIME_DIR, "logs")
 
 
+def get_memory_dir() -> str:
+    """Get the long-term memory directory path.
+
+    Returns:
+        Path to ~/.aloop/memory/
+    """
+    return os.path.join(RUNTIME_DIR, "memory")
+
+
 def get_history_file() -> str:
     """Get the command history file path.
 

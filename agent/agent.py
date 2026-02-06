@@ -1,11 +1,15 @@
 """Loop agent implementation."""
 
+import logging
+
 from config import Config
 from llm import LLMMessage
 from utils import terminal_ui
 
 from .base import BaseAgent
 from .context import format_context_prompt
+
+logger = logging.getLogger(__name__)
 
 
 class LoopAgent(BaseAgent):
@@ -176,6 +180,15 @@ When to use each approach:
             except Exception:
                 # If context gathering fails, continue without it
                 pass
+
+            # Inject long-term memory instructions + current memories
+            if self.memory.long_term:
+                try:
+                    ltm_section = await self.memory.long_term.load_and_format()
+                    if ltm_section:
+                        system_content = system_content + "\n" + ltm_section
+                except Exception:
+                    logger.warning("Failed to load long-term memory", exc_info=True)
 
             # Add system message only on first turn
             await self.memory.add_message(LLMMessage(role="system", content=system_content))
