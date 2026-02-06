@@ -192,9 +192,7 @@ def _format_structure_output(file_path: str, structure: Dict, lang: str) -> str:
         output_parts.append("FUNCTIONS:")
         for func in structure["functions"]:
             if lang == "python":
-                output_parts.append(
-                    f"   Line {func['line']}: def {func['name']}({func['args']})"
-                )
+                output_parts.append(f"   Line {func['line']}: def {func['name']}({func['args']})")
             else:
                 output_parts.append(f"   Line {func['line']}: {func['name']}")
             if func.get("docstring"):
