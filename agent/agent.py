@@ -92,15 +92,14 @@ Assistant: [Immediately starts without planning, forgets steps halfway through]
 <tool_usage_guidelines>
 For file operations:
 - Use glob_files to find files by pattern (fast, efficient)
-- Use code_navigator to find function/class definitions (10x faster than grep, AST-based)
-- Use grep_content for text search only (not for finding code structure)
+- Use grep_content for text/code search in files
 - Use read_file only when you need full contents (avoid reading multiple large files at once)
 - Use smart_edit for code edits (fuzzy match, auto backup, diff preview)
 - Use edit_file for simple append/insert operations only
 - Use write_file only for creating new files or complete rewrites
 
 CRITICAL: Never read multiple large files in a single iteration - this causes context overflow!
-Instead: Use code_navigator or grep_content to find specific information, then read only what you need.
+Instead: Use grep_content to find specific information, then read only what you need.
 
 For complex tasks:
 - Use manage_todo_list to track progress

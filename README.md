@@ -131,7 +131,6 @@ aloop --resume a1b2c3d4
 | `smart_edit` | LLM-assisted file editing |
 | `glob_files` | Glob pattern file matching |
 | `grep_content` | Regex search in file contents |
-| `code_navigator` | AST-based code navigation (tree-sitter) |
 | `calculate` | Evaluate expressions / run Python code |
 | `shell` | Execute shell commands |
 | `shell_task_status` | Check background shell task status |
