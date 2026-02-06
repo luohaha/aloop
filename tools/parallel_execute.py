@@ -21,7 +21,6 @@ ALLOWED_SUBTASK_TOOLS = {
     "edit_file",
     "smart_edit",
     "search_files",
-    "code_navigator",
     "shell",
     "calculate",
     "web_search",

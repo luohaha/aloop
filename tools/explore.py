@@ -24,7 +24,7 @@ Description: {description}
 
 <instructions>
 1. Use available information-gathering tools:
-   - Code exploration: glob_files, grep_content, read_file, code_navigator
+   - Code exploration: glob_files, grep_content, read_file
    - Web exploration: web_search, web_fetch
 
 2. Focus ONLY on the specified exploration aspect
@@ -61,7 +61,6 @@ class ExploreTool(BaseTool):
         "glob_files",
         "grep_content",
         "read_file",
-        "code_navigator",
         "web_search",
         "web_fetch",
     }

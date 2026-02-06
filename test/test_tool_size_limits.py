@@ -68,6 +68,58 @@ class TestFileReadToolSizeLimits:
         assert "line 50" in result
         assert "line 59" in result
 
+    async def test_large_python_file_shows_structure(self, tmp_path):
+        """Large Python files should show code structure instead of error."""
+        tool = FileReadTool()
+        test_file = tmp_path / "large_module.py"
+        # Build a large Python file with classes and functions
+        lines = [
+            '"""A large module."""',
+            "import os",
+            "from typing import List",
+            "",
+        ]
+        for i in range(200):
+            lines.append(f"def function_{i}(x: int) -> int:")
+            lines.append(f'    """Docstring for function_{i}."""')
+            lines.append(f"    return x + {i}")
+            lines.append("")
+        # Pad to exceed MAX_TOKENS * CHARS_PER_TOKEN
+        lines.append("# " + "x" * 120000)
+        test_file.write_text("\n".join(lines))
+
+        result = await tool.execute(str(test_file))
+
+        # Should show structure, not the generic error
+        assert "File too large to read fully" in result
+        assert "Showing code structure instead" in result
+        assert "IMPORTS" in result
+        assert "FUNCTIONS" in result
+        assert "function_0" in result
+        assert "offset" in result.lower() and "limit" in result.lower()
+
+    async def test_large_non_code_file_shows_error(self, tmp_path):
+        """Large non-code files (.txt, .json) should return the original error."""
+        tool = FileReadTool()
+        test_file = tmp_path / "large.json"
+        test_file.write_text('{"data": "' + "x" * 150000 + '"}')
+
+        result = await tool.execute(str(test_file))
+
+        assert "Error: File content" in result
+        assert "exceeds" in result
+
+    async def test_small_code_file_returns_full_content(self, tmp_path):
+        """Small code files should still return full content (no truncation)."""
+        tool = FileReadTool()
+        test_file = tmp_path / "small.py"
+        content = 'def hello():\n    return "world"\n'
+        test_file.write_text(content)
+
+        result = await tool.execute(str(test_file))
+
+        assert result == content
+
     async def test_file_not_found(self):
         """Non-existent files should return error."""
         tool = FileReadTool()

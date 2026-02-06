@@ -7,6 +7,7 @@ import aiofiles
 import aiofiles.os
 
 from .base import BaseTool
+from .code_structure import show_file_structure
 
 
 class FileReadTool(BaseTool):
@@ -47,8 +48,16 @@ class FileReadTool(BaseTool):
             file_size = await aiofiles.os.path.getsize(file_path)
             estimated_tokens = file_size // self.CHARS_PER_TOKEN
 
-            # If file too large and no pagination, return error
+            # If file too large and no pagination, try showing code structure
             if estimated_tokens > self.MAX_TOKENS and limit is None:
+                structure = await show_file_structure(file_path)
+                if structure:
+                    return (
+                        f"File too large to read fully (~{estimated_tokens} tokens, "
+                        f"max {self.MAX_TOKENS}). Showing code structure instead:\n\n"
+                        f"{structure}\n\n"
+                        f"Use offset and limit parameters to read specific sections."
+                    )
                 return (
                     f"Error: File content (~{estimated_tokens} tokens) exceeds "
                     f"maximum allowed tokens ({self.MAX_TOKENS}). Please use offset "
