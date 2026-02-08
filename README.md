@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)]()
 
-*An open-source AI agent framework built on a single, unified loop.*
+*An open-source AI agent built on a single, unified loop.*
 
 </div>
 
