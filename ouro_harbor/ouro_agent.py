@@ -42,12 +42,17 @@ def _resolve_api_key(model_name: str | None) -> str:
 
 
 def _build_models_yaml(model_name: str, api_key: str) -> str:
-    """Return the content of ``~/.ouro/models.yaml`` for the container."""
+    """Return the content of ``~/.ouro/models.yaml`` for the container.
+
+    The key under ``models`` is the LiteLLM model ID (e.g.
+    ``anthropic/claude-sonnet-4-5-20250929``).  ``default`` must reference
+    the same key so that ``ouro --model <key>`` resolves correctly.
+    """
     timeout = os.environ.get("OURO_TIMEOUT", "600")
     return (
-        f"default: harbor-model\n"
+        f"default: {model_name}\n"
         f"models:\n"
-        f"  harbor-model:\n"
+        f"  {model_name}:\n"
         f"    api_key: {api_key}\n"
         f"    timeout: {timeout}\n"
     )
@@ -93,8 +98,9 @@ class OuroAgent(BaseInstalledAgent):
         )
 
         # Run ouro in single-task mode and tee output for log collection
+        escaped_model = shlex.quote(model_name)
         run_command = (
-            f"ouro --model harbor-model --task {escaped_instruction} "
+            f"ouro --model {escaped_model} --task {escaped_instruction} "
             f"2>&1 | tee /logs/agent/ouro-output.txt"
         )
 
