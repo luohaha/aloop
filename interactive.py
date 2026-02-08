@@ -364,10 +364,6 @@ class InteractiveSession:
             await self._handle_skills_menu()
 
         else:
-            if command.startswith("/"):
-                command_name = command[1:]
-                if command_name in self.skills_registry.commands:
-                    return None
             colors = Theme.get_colors()
             terminal_ui.console.print(
                 f"[bold {colors.error}]Unknown command: {command}[/bold {colors.error}]"

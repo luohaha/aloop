@@ -6,49 +6,29 @@ from agent.skills import SYSTEM_SKILLS_DIR, SkillsRegistry
 
 
 @pytest.mark.asyncio
-async def test_skills_registry_load_and_resolve(tmp_path, monkeypatch) -> None:
+async def test_skills_registry_unknown_slash_is_passthrough(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    skills_root = tmp_path / ".ouro" / "skills" / "code-review"
+    skills_root = tmp_path / ".ouro" / "skills" / "lint"
     skills_root.mkdir(parents=True)
     (skills_root / "SKILL.md").write_text(
         textwrap.dedent(
             """
             ---
-            name: code-review
-            description: Review code for correctness.
+            name: lint
+            description: Run lint checks.
             ---
 
-            Always review carefully.
+            Run lint and report issues.
             """
         ).strip()
     )
-
-    repo_root = tmp_path / "repo"
-    commands_dir = repo_root / ".ouro" / "commands"
-    commands_dir.mkdir(parents=True)
-    (commands_dir / "review.md").write_text(
-        textwrap.dedent(
-            """
-            ---
-            description: Perform review.
-            requires-skills:
-              - code-review
-            ---
-
-            Please review: $ARGUMENTS
-            """
-        ).strip()
-    )
-
-    monkeypatch.chdir(repo_root)
 
     registry = SkillsRegistry()
     await registry.load()
 
     resolved = await registry.resolve_user_input("/review fix bug")
-    assert "SKILL: code-review" in resolved.rendered
-    assert "Always review carefully." in resolved.rendered
-    assert "Please review: fix bug" in resolved.rendered
+    assert resolved.rendered == "/review fix bug"
+    assert resolved.invoked_skill is None
 
 
 @pytest.mark.asyncio

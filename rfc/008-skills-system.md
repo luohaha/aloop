@@ -6,10 +6,12 @@ Draft
 
 ## Summary
 
-Introduce a minimal skills system for ouro:
+Introduce a minimal skills system for ouro focused on one core object:
 
 - **Skill**: reusable workflow package with progressive disclosure
-- **Command**: user entrypoint (`/review`) that may depend on skills
+
+This MVP intentionally excludes repo-scoped command templates (`/review`-style custom commands)
+to reduce implementation complexity and rollout risk.
 
 ## Problem Statement
 
@@ -19,26 +21,42 @@ ouro needs a structured way to:
 - Let LLM automatically select skills based on task matching
 - Make context assembly auditable and deterministic
 
+## Scope (MVP)
+
+### In Scope
+
+- User-installed and system skills
+- Skills metadata indexing at startup (`name` + `description`)
+- Explicit skill invocation via `$skill-name`
+- Implicit skill selection via description matching in system instructions
+- Skill body lazy loading only on invocation
+- Skills management UI (`/skills` list/install/uninstall)
+
+### Out of Scope (Deferred)
+
+- Repo-scoped custom command templates under `.ouro/commands/*.md`
+- Command frontmatter (`requires-skills`, template expansion)
+- Dynamic slash commands backed by local markdown files
+
 ## Design
 
-### 1) Canonical Objects
+### 1) Canonical Object
 
 | Object | Description |
 |--------|-------------|
 | **Skill** | Reusable workflow package. Metadata indexed at startup; body loaded on invocation. |
-| **Command** | Explicit entrypoint (e.g. `/review`). May declare `requires-skills`. |
 
 ### 2) File Layout
 
-```
-# Project files (checked into repo)
-.ouro/commands/<name>.md              # Repo-specific commands
-
+```text
 # User-level (not in repo)
 ~/.ouro/skills/<skill-name>/SKILL.md  # Installed skills
+
+# Bundled with app
+agent/skills/system/<skill-name>/SKILL.md
 ```
 
-MVP only discovers skills from `~/.ouro/skills/`.
+MVP only discovers skills from user and bundled system locations.
 
 ### 3) Skill Format
 
@@ -59,39 +77,25 @@ Instructions for the agent...
 
 **Constraints**:
 - `name`: 1–64 chars, lowercase + hyphens, must match directory name
-- `description`: 1–1024 chars. **Critical**: This is the primary trigger mechanism. Include both what the skill does AND when to use it.
+- `description`: 1–1024 chars. This is the primary trigger mechanism; include both what and when.
 
 Optional directories: `scripts/`, `references/`, `assets/` (read-only in MVP).
 
-### 4) Command Format
-
-```yaml
----
-description: Perform code review.
-requires-skills:
-  - code-review
----
-
-Review the changes: $ARGUMENTS
-```
-
-`name` is derived from filename (`.ouro/commands/review.md` → `/review`).
-
-### 5) Progressive Disclosure
+### 4) Progressive Disclosure
 
 Skills use a three-level loading system to manage context efficiently:
 
-1. **Metadata (~100 tokens)**: `name` + `description` loaded at startup for ALL skills
-2. **System Prompt Injection**: Available skills list injected into system prompt so LLM knows what's available
-3. **Full Body (on invocation)**: Complete `SKILL.md` body loaded only when skill is triggered
+1. **Metadata (~100 tokens)**: `name` + `description` loaded at startup for all skills
+2. **System Prompt Injection**: available skills list injected into system prompt
+3. **Full Body (on invocation)**: complete `SKILL.md` body loaded only when skill is triggered
 
-### 6) Invocation
+### 5) Invocation
 
 Skills can be invoked in two ways:
 
 | Method | Trigger | Example |
 |--------|---------|---------|
-| **Explicit** | User types `$skill-name` or `/<command>` | `$lint src/` or `/review` |
+| **Explicit** | User types `$skill-name` | `$lint src/` |
 | **Implicit** | LLM matches task to skill description | User: "check my code" → LLM selects `code-review` |
 
 **Trigger rules** (injected into system prompt):
@@ -100,64 +104,39 @@ Skills can be invoked in two ways:
 - Multiple matches → use all matching skills
 - Skills do not carry across turns unless re-mentioned
 
-### 7) Context Assembly
+### 6) Context Assembly
 
-1. **At startup**: Render skills section into system prompt (name + description + path for each skill)
-2. **On invocation**: Load skill body, inject as user message with `<skill>` tags
-3. **Template variable**: `$ARGUMENTS` expands to user input
+1. At startup: render skills section into system prompt (name + description + path)
+2. On invocation: load skill body and inject it into the user turn
+3. Pass user arguments after `$skill` as `ARGUMENTS` context
 
-### 8) Skill Management
+### 7) Skill Management
 
 `/skills` opens an interactive menu:
 
-```
+```text
 Skills
 Choose an action
 
 > 1. List skills          Tip: press $ to open this list directly.
   2. Install skill        Install from local path or git URL.
   3. Uninstall skill      Remove an installed skill.
-
-Press enter to confirm or esc to go back
 ```
 
-**MVP scope**:
+**MVP behavior**:
 - List shows `name` + `description` for each installed skill
 - Install copies skill directory to `~/.ouro/skills/`
 - Uninstall removes directory from `~/.ouro/skills/`
 - Restart required after install/uninstall to reload registry
 
-### 9) Startup Flow
+### 8) Startup Flow
 
-1. Scan `.ouro/commands/*.md` → parse frontmatter
-2. Scan `~/.ouro/skills/*/SKILL.md` → parse frontmatter (`name` + `description`)
-3. Build registry (no body loading)
-4. **Render skills section** → inject into system prompt
+1. Scan `~/.ouro/skills/*/SKILL.md` and bundled system skills
+2. Parse frontmatter (`name` + `description`)
+3. Build skills registry (no body loading)
+4. Render skills section and inject into system prompt
 
-**Error handling**: Malformed files are skipped with a warning.
-
-### 10) System Prompt Injection
-
-At startup, render available skills into the system prompt:
-
-```markdown
-## Skills
-A skill is a set of local instructions stored in a `SKILL.md` file.
-
-### Available skills
-- code-review: Review code for style and correctness. (file: ~/.ouro/skills/code-review/SKILL.md)
-- lint: Run linters on source files. (file: ~/.ouro/skills/lint/SKILL.md)
-
-### How to use skills
-- If user names a skill (with `$SkillName` or plain text) OR task matches a skill's description, use that skill
-- After deciding to use a skill, open its `SKILL.md` and follow the workflow
-- Announce which skill(s) you're using and why
-```
-
-This enables LLM to:
-1. See all available skills and their descriptions
-2. Automatically select matching skills based on user intent
-3. Load full instructions only when needed
+Malformed files are skipped with a warning.
 
 ## References
 
@@ -166,6 +145,7 @@ This enables LLM to:
 
 ## Future Work
 
+- Re-introduce repo-scoped command templates (`.ouro/commands/*.md`) if needed
 - Enable/disable state (`~/.ouro/skills.json`)
 - Repo-scoped skills (`.ouro/skills/`)
 - Autocomplete for `$` prefix
@@ -175,6 +155,6 @@ This enables LLM to:
 ## Next Steps
 
 1. ~~Implement skill indexer + loader~~
-2. ~~Add `/command` and `$skill` parsing to input handler~~
-3. **Add `render_skills_section()` for system prompt injection**
-4. **Integrate skills into agent's system prompt**
+2. ~~Add `$skill` parsing to input handler~~
+3. Add `render_skills_section()` for system prompt injection
+4. Integrate skills into agent's system prompt

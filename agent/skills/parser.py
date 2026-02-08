@@ -44,15 +44,6 @@ def split_invocation(value: str, prefix: str) -> tuple[str, str]:
     return name.strip(), rest.strip()
 
 
-def render_template(template: str, arguments: str) -> str:
-    if "$ARGUMENTS" in template:
-        return template.replace("$ARGUMENTS", arguments)
-    if not arguments:
-        return template
-    suffix = f"\n\nARGUMENTS: {arguments}" if template.strip() else f"ARGUMENTS: {arguments}"
-    return f"{template.rstrip()}{suffix}"
-
-
 def render_skill_prompt(name: str, body: str, arguments: str) -> str:
     parts = [f"SKILL: {name}", body.strip()]
     if arguments:
@@ -63,16 +54,6 @@ def render_skill_prompt(name: str, body: str, arguments: str) -> str:
 async def read_text(path: Path) -> str:
     async with aiofiles.open(path, encoding="utf-8") as handle:
         return await handle.read()
-
-
-async def list_command_files(commands_dir: Path) -> list[Path]:
-    if not await aiofiles.os.path.exists(commands_dir):
-        return []
-
-    def _collect() -> list[Path]:
-        return [p for p in commands_dir.glob("*.md") if p.is_file()]
-
-    return await asyncio.to_thread(_collect)
 
 
 async def list_skill_files(skills_dir: Path) -> list[Path]:

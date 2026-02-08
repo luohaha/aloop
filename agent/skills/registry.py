@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import tempfile
 from pathlib import Path
 
@@ -18,32 +17,26 @@ from .installer import (
     remove_tree,
 )
 from .parser import (
-    list_command_files,
     list_skill_files,
     read_text,
     render_skill_prompt,
-    render_template,
     split_frontmatter,
     split_invocation,
 )
-from .types import CommandInfo, ResolvedInput, SkillInfo
+from .types import ResolvedInput, SkillInfo
 
 # System skills are bundled with ouro
 SYSTEM_SKILLS_DIR = Path(__file__).parent / "system"
 
 
 class SkillsRegistry:
-    """Index and resolve skills + commands for ouro."""
+    """Index and resolve skills for ouro."""
 
     def __init__(self) -> None:
         self.skills: dict[str, SkillInfo] = {}
-        self.commands: dict[str, CommandInfo] = {}
 
-    async def load(self, cwd: str | None = None) -> None:
-        root = Path(cwd or os.getcwd())
-        commands_dir = root / ".ouro" / "commands"
+    async def load(self) -> None:
         skills_dir = Path.home() / ".ouro" / "skills"
-        self.commands = await self._load_commands(commands_dir)
         # Load user skills first, then system skills (user skills take precedence)
         self.skills = await self._load_skills(skills_dir)
         system_skills = await self._load_skills(SYSTEM_SKILLS_DIR)
@@ -69,28 +62,6 @@ class SkillsRegistry:
             )
         return results
 
-    async def _load_commands(self, commands_dir: Path) -> dict[str, CommandInfo]:
-        results: dict[str, CommandInfo] = {}
-        for command_file in await list_command_files(commands_dir):
-            content = await read_text(command_file)
-            frontmatter, body = split_frontmatter(content)
-            name = command_file.stem
-            description = str(frontmatter.get("description", "")).strip()
-            requires = frontmatter.get("requires-skills", [])
-            requires_list: list[str] = []
-            if isinstance(requires, list):
-                requires_list = [str(item).strip() for item in requires if str(item).strip()]
-            elif isinstance(requires, str):
-                requires_list = [requires.strip()] if requires.strip() else []
-            results[name] = CommandInfo(
-                name=name,
-                description=description,
-                path=command_file,
-                requires_skills=requires_list,
-                template=body.strip(),
-            )
-        return results
-
     async def load_skill_body(self, skill: SkillInfo) -> str:
         content = await read_text(skill.path / "SKILL.md")
         _, body = split_frontmatter(content)
@@ -101,34 +72,12 @@ class SkillsRegistry:
             name, args = split_invocation(user_input, "$")
             skill = self.skills.get(name)
             if not skill:
-                return ResolvedInput(user_input, user_input, None, None, args)
+                return ResolvedInput(user_input, user_input, None, args)
             body = await self.load_skill_body(skill)
             rendered = render_skill_prompt(skill.name, body, args)
-            return ResolvedInput(user_input, rendered, None, skill.name, args)
+            return ResolvedInput(user_input, rendered, skill.name, args)
 
-        if user_input.startswith("/"):
-            name, args = split_invocation(user_input, "/")
-            command = self.commands.get(name)
-            if not command:
-                return ResolvedInput(user_input, user_input, None, None, args)
-
-            sections: list[str] = []
-            for skill_name in command.requires_skills:
-                skill = self.skills.get(skill_name)
-                if not skill:
-                    terminal_ui.print_warning(
-                        f"Missing required skill '{skill_name}' for /{command.name}"
-                    )
-                    continue
-                body = await self.load_skill_body(skill)
-                sections.append(render_skill_prompt(skill.name, body, ""))
-
-            template = render_template(command.template, args)
-            sections.append(template)
-            rendered = "\n\n".join(s for s in sections if s)
-            return ResolvedInput(user_input, rendered, command.name, None, args)
-
-        return ResolvedInput(user_input, user_input, None, None, "")
+        return ResolvedInput(user_input, user_input, None, "")
 
     async def install_skill(self, source: str) -> SkillInfo | None:
         source = source.strip()
