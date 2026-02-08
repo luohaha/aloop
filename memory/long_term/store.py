@@ -1,6 +1,6 @@
 """Git-backed store for long-term memory.
 
-Memory files live in ~/.aloop/memory/ as markdown files, managed by a local
+Memory files live in ~/.ouro/memory/ as markdown files, managed by a local
 git repo for change tracking and concurrency detection.
 """
 
@@ -49,8 +49,8 @@ class GitMemoryStore:
         if not os.path.isdir(git_dir):
             await self._run_git("init")
             # Ensure commits work even without a global git config
-            await self._run_git("config", "user.name", "aloop")
-            await self._run_git("config", "user.email", "aloop@local")
+            await self._run_git("config", "user.name", "ouro")
+            await self._run_git("config", "user.email", "ouro@local")
             logger.info("Initialized long-term memory git repo at %s", self.memory_dir)
 
     async def get_current_head(self) -> Optional[str]:
