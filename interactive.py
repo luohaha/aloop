@@ -396,7 +396,7 @@ class InteractiveSession:
             result = await self.skills_registry.install_skill(source)
             if result:
                 terminal_ui.print_success(f"Installed skill: {result.name}")
-                terminal_ui.print_info("Restart aloop to reload skills registry")
+                terminal_ui.print_info("Restart ouro to reload skills registry")
             return
 
         if action == SkillsAction.UNINSTALL:
@@ -407,7 +407,7 @@ class InteractiveSession:
             ok = await self.skills_registry.uninstall_skill(name)
             if ok:
                 terminal_ui.print_success(f"Removed skill: {name}")
-                terminal_ui.print_info("Restart aloop to reload skills registry")
+                terminal_ui.print_info("Restart ouro to reload skills registry")
 
     def _show_skills_list(self) -> None:
         colors = Theme.get_colors()

@@ -8,7 +8,7 @@ from agent.skills import SYSTEM_SKILLS_DIR, SkillsRegistry
 @pytest.mark.asyncio
 async def test_skills_registry_load_and_resolve(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    skills_root = tmp_path / ".aloop" / "skills" / "code-review"
+    skills_root = tmp_path / ".ouro" / "skills" / "code-review"
     skills_root.mkdir(parents=True)
     (skills_root / "SKILL.md").write_text(
         textwrap.dedent(
@@ -24,7 +24,7 @@ async def test_skills_registry_load_and_resolve(tmp_path, monkeypatch) -> None:
     )
 
     repo_root = tmp_path / "repo"
-    commands_dir = repo_root / ".aloop" / "commands"
+    commands_dir = repo_root / ".ouro" / "commands"
     commands_dir.mkdir(parents=True)
     (commands_dir / "review.md").write_text(
         textwrap.dedent(
@@ -54,7 +54,7 @@ async def test_skills_registry_load_and_resolve(tmp_path, monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_skills_registry_skill_invocation(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    skills_root = tmp_path / ".aloop" / "skills" / "lint"
+    skills_root = tmp_path / ".ouro" / "skills" / "lint"
     skills_root.mkdir(parents=True)
     (skills_root / "SKILL.md").write_text(
         textwrap.dedent(
@@ -84,7 +84,7 @@ async def test_system_skills_loaded(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
 
     # Create empty user skills directory
-    (tmp_path / ".aloop" / "skills").mkdir(parents=True)
+    (tmp_path / ".ouro" / "skills").mkdir(parents=True)
 
     registry = SkillsRegistry()
     await registry.load()
@@ -104,7 +104,7 @@ async def test_user_skill_overrides_system_skill(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
 
     # Create a user skill with same name as system skill
-    user_skill = tmp_path / ".aloop" / "skills" / "skill-creator"
+    user_skill = tmp_path / ".ouro" / "skills" / "skill-creator"
     user_skill.mkdir(parents=True)
     (user_skill / "SKILL.md").write_text(
         textwrap.dedent(

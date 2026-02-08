@@ -25,14 +25,14 @@ class ListError(Exception):
     """List error."""
 
 
-def aloop_home() -> Path:
-    """Get aloop home directory."""
-    return Path(os.environ.get("ALOOP_HOME", Path.home() / ".aloop"))
+def ouro_home() -> Path:
+    """Get ouro home directory."""
+    return Path(os.environ.get("OURO_HOME", Path.home() / ".ouro"))
 
 
 def skills_dir() -> Path:
     """Get skills installation directory."""
-    return aloop_home() / "skills"
+    return ouro_home() / "skills"
 
 
 def list_installed_skills() -> list[dict[str, str]]:
@@ -78,7 +78,7 @@ def list_installed_skills() -> list[dict[str, str]]:
 
 def github_request(url: str) -> bytes:
     """Make a GitHub API request."""
-    headers = {"User-Agent": "aloop-skill-list"}
+    headers = {"User-Agent": "ouro-skill-list"}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         headers["Authorization"] = f"token {token}"
@@ -119,7 +119,7 @@ def list_github_skills(repo: str, path: str, ref: str = "main") -> list[dict[str
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="List aloop skills")
+    parser = argparse.ArgumentParser(description="List ouro skills")
     parser.add_argument("--installed", action="store_true", help="List installed skills")
     parser.add_argument("--repo", help="GitHub repo (owner/repo)")
     parser.add_argument("--path", default="skills", help="Path in repo")

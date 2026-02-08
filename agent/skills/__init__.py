@@ -1,4 +1,4 @@
-"""Skills system utilities for aloop (MVP)."""
+"""Skills system utilities for ouro (MVP)."""
 
 from .registry import SYSTEM_SKILLS_DIR, SkillsRegistry
 from .render import render_skills_section

@@ -6,14 +6,14 @@ Draft
 
 ## Summary
 
-Introduce a minimal skills system for aloop:
+Introduce a minimal skills system for ouro:
 
 - **Skill**: reusable workflow package with progressive disclosure
 - **Command**: user entrypoint (`/review`) that may depend on skills
 
 ## Problem Statement
 
-aloop needs a structured way to:
+ouro needs a structured way to:
 
 - Provide opt-in, reusable workflows without bloating context
 - Let LLM automatically select skills based on task matching
@@ -32,13 +32,13 @@ aloop needs a structured way to:
 
 ```
 # Project files (checked into repo)
-.aloop/commands/<name>.md              # Repo-specific commands
+.ouro/commands/<name>.md              # Repo-specific commands
 
 # User-level (not in repo)
-~/.aloop/skills/<skill-name>/SKILL.md  # Installed skills
+~/.ouro/skills/<skill-name>/SKILL.md  # Installed skills
 ```
 
-MVP only discovers skills from `~/.aloop/skills/`.
+MVP only discovers skills from `~/.ouro/skills/`.
 
 ### 3) Skill Format
 
@@ -75,7 +75,7 @@ requires-skills:
 Review the changes: $ARGUMENTS
 ```
 
-`name` is derived from filename (`.aloop/commands/review.md` → `/review`).
+`name` is derived from filename (`.ouro/commands/review.md` → `/review`).
 
 ### 5) Progressive Disclosure
 
@@ -123,14 +123,14 @@ Press enter to confirm or esc to go back
 
 **MVP scope**:
 - List shows `name` + `description` for each installed skill
-- Install copies skill directory to `~/.aloop/skills/`
-- Uninstall removes directory from `~/.aloop/skills/`
+- Install copies skill directory to `~/.ouro/skills/`
+- Uninstall removes directory from `~/.ouro/skills/`
 - Restart required after install/uninstall to reload registry
 
 ### 9) Startup Flow
 
-1. Scan `.aloop/commands/*.md` → parse frontmatter
-2. Scan `~/.aloop/skills/*/SKILL.md` → parse frontmatter (`name` + `description`)
+1. Scan `.ouro/commands/*.md` → parse frontmatter
+2. Scan `~/.ouro/skills/*/SKILL.md` → parse frontmatter (`name` + `description`)
 3. Build registry (no body loading)
 4. **Render skills section** → inject into system prompt
 
@@ -145,8 +145,8 @@ At startup, render available skills into the system prompt:
 A skill is a set of local instructions stored in a `SKILL.md` file.
 
 ### Available skills
-- code-review: Review code for style and correctness. (file: ~/.aloop/skills/code-review/SKILL.md)
-- lint: Run linters on source files. (file: ~/.aloop/skills/lint/SKILL.md)
+- code-review: Review code for style and correctness. (file: ~/.ouro/skills/code-review/SKILL.md)
+- lint: Run linters on source files. (file: ~/.ouro/skills/lint/SKILL.md)
 
 ### How to use skills
 - If user names a skill (with `$SkillName` or plain text) OR task matches a skill's description, use that skill
@@ -166,8 +166,8 @@ This enables LLM to:
 
 ## Future Work
 
-- Enable/disable state (`~/.aloop/skills.json`)
-- Repo-scoped skills (`.aloop/skills/`)
+- Enable/disable state (`~/.ouro/skills.json`)
+- Repo-scoped skills (`.ouro/skills/`)
 - Autocomplete for `$` prefix
 - Script execution with sandboxing
 - Template variables: `$FILE`, `$SELECTION`, `$REPO_ROOT`

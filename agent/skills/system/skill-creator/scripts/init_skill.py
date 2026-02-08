@@ -6,9 +6,9 @@ Usage:
     init_skill.py <skill-name> --path <path> [--resources scripts,references,assets]
 
 Examples:
-    init_skill.py my-new-skill --path ~/.aloop/skills
-    init_skill.py my-new-skill --path ~/.aloop/skills --resources scripts,references
-    init_skill.py my-api-helper --path ~/.aloop/skills --resources scripts
+    init_skill.py my-new-skill --path ~/.ouro/skills
+    init_skill.py my-new-skill --path ~/.ouro/skills --resources scripts,references
+    init_skill.py my-api-helper --path ~/.ouro/skills --resources scripts
 """
 
 from __future__ import annotations
@@ -174,13 +174,13 @@ def init_skill(
         print("2. Add resources to scripts/, references/, and assets/ as needed")
     else:
         print("2. Create resource directories only if needed (scripts/, references/, assets/)")
-    print("3. Test the skill by using it in aloop")
+    print("3. Test the skill by using it in ouro")
 
     return skill_dir
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Initialize a new aloop skill from template")
+    parser = argparse.ArgumentParser(description="Initialize a new ouro skill from template")
     parser.add_argument("skill_name", help="Name of the skill to create")
     parser.add_argument(
         "--path",

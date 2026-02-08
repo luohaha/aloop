@@ -17,7 +17,7 @@ def test_render_skills_section_single() -> None:
         SkillInfo(
             name="code-review",
             description="Review code for style and correctness.",
-            path=Path("/home/user/.aloop/skills/code-review"),
+            path=Path("/home/user/.ouro/skills/code-review"),
         )
     ]
     result = render_skills_section(skills)
@@ -26,7 +26,7 @@ def test_render_skills_section_single() -> None:
     assert "## Skills" in result
     assert "### Available skills" in result
     assert "- code-review: Review code for style and correctness." in result
-    assert "/home/user/.aloop/skills/code-review/SKILL.md" in result
+    assert "/home/user/.ouro/skills/code-review/SKILL.md" in result
     assert "### How to use skills" in result
     assert "Trigger rules:" in result
 

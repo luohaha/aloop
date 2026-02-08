@@ -1,11 +1,11 @@
 ---
 name: skill-creator
-description: Guide for creating effective aloop skills. Use when users want to create a new skill (or update an existing skill) that extends aloop's capabilities with specialized knowledge, workflows, or tool integrations.
+description: Guide for creating effective ouro skills. Use when users want to create a new skill (or update an existing skill) that extends ouro's capabilities with specialized knowledge, workflows, or tool integrations.
 ---
 
 # Skill Creator
 
-This skill guides you through creating effective aloop skills that extend the agent's capabilities.
+This skill guides you through creating effective ouro skills that extend the agent's capabilities.
 
 ## Core Principles
 
@@ -47,7 +47,7 @@ skill-name/
 
 Every SKILL.md consists of:
 
-- **Frontmatter** (YAML): Contains `name` and `description` fields. These are the only fields that aloop reads to determine when the skill gets used, thus it is very important to be clear and comprehensive in describing what the skill is, and when it should be used.
+- **Frontmatter** (YAML): Contains `name` and `description` fields. These are the only fields that ouro reads to determine when the skill gets used, thus it is very important to be clear and comprehensive in describing what the skill is, and when it should be used.
 - **Body** (Markdown): Instructions and guidance for using the skill. Only loaded AFTER the skill triggers.
 
 ### Bundled Resources (optional)
@@ -96,7 +96,7 @@ bigquery-skill/
     └── product.md (API usage, features)
 ```
 
-When a user asks about sales metrics, aloop only reads sales.md.
+When a user asks about sales metrics, ouro only reads sales.md.
 
 ### Pattern 3: Conditional details
 
@@ -158,8 +158,8 @@ python scripts/init_skill.py <skill-name> --path <output-directory> [--resources
 Examples:
 
 ```bash
-python scripts/init_skill.py my-skill --path ~/.aloop/skills
-python scripts/init_skill.py my-skill --path ~/.aloop/skills --resources scripts,references
+python scripts/init_skill.py my-skill --path ~/.ouro/skills
+python scripts/init_skill.py my-skill --path ~/.ouro/skills --resources scripts,references
 ```
 
 ### Step 4: Edit the Skill

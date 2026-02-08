@@ -28,12 +28,12 @@ from .parser import (
 )
 from .types import CommandInfo, ResolvedInput, SkillInfo
 
-# System skills are bundled with aloop
+# System skills are bundled with ouro
 SYSTEM_SKILLS_DIR = Path(__file__).parent / "system"
 
 
 class SkillsRegistry:
-    """Index and resolve skills + commands for aloop."""
+    """Index and resolve skills + commands for ouro."""
 
     def __init__(self) -> None:
         self.skills: dict[str, SkillInfo] = {}
@@ -41,8 +41,8 @@ class SkillsRegistry:
 
     async def load(self, cwd: str | None = None) -> None:
         root = Path(cwd or os.getcwd())
-        commands_dir = root / ".aloop" / "commands"
-        skills_dir = Path.home() / ".aloop" / "skills"
+        commands_dir = root / ".ouro" / "commands"
+        skills_dir = Path.home() / ".ouro" / "skills"
         self.commands = await self._load_commands(commands_dir)
         # Load user skills first, then system skills (user skills take precedence)
         self.skills = await self._load_skills(skills_dir)
@@ -147,7 +147,7 @@ class SkillsRegistry:
         if not name:
             terminal_ui.print_error("Skill name cannot be empty")
             return False
-        target_dir = Path.home() / ".aloop" / "skills" / name
+        target_dir = Path.home() / ".ouro" / "skills" / name
         if not await aiofiles.os.path.exists(target_dir):
             terminal_ui.print_warning(f"Skill '{name}' not found in {target_dir}")
             return False
@@ -168,7 +168,7 @@ class SkillsRegistry:
             terminal_ui.print_error("SKILL.md missing required name/description")
             return None
 
-        dest_root = Path.home() / ".aloop" / "skills" / name
+        dest_root = Path.home() / ".ouro" / "skills" / name
         if await aiofiles.os.path.exists(dest_root):
             terminal_ui.print_warning(f"Skill '{name}' already exists at {dest_root}")
             return None
@@ -185,7 +185,7 @@ class SkillsRegistry:
             subdir = subdir.strip() or None
 
         def _mktemp() -> str:
-            return tempfile.mkdtemp(prefix="aloop-skill-")
+            return tempfile.mkdtemp(prefix="ouro-skill-")
 
         temp_dir = Path(await asyncio.to_thread(_mktemp))
         try:

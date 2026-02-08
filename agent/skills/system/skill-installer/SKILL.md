@@ -1,6 +1,6 @@
 ---
 name: skill-installer
-description: Install aloop skills from GitHub repositories or list available skills from a curated registry. Use when a user asks to list installable skills, install a skill from a repo, or manage installed skills.
+description: Install ouro skills from GitHub repositories or list available skills from a curated registry. Use when a user asks to list installable skills, install a skill from a repo, or manage installed skills.
 ---
 
 # Skill Installer
@@ -11,10 +11,10 @@ Helps install skills from GitHub or other sources.
 
 List installed skills:
 ```bash
-ls -la ~/.aloop/skills/
+ls -la ~/.ouro/skills/
 ```
 
-Install from GitHub (aloop has built-in support):
+Install from GitHub (ouro has built-in support):
 ```
 $install <git-url>
 ```
@@ -50,7 +50,7 @@ python scripts/install_skill.py --url https://github.com/owner/repo#skills/my-sk
 Copy a local skill directory:
 
 ```bash
-cp -r /path/to/skill ~/.aloop/skills/skill-name
+cp -r /path/to/skill ~/.ouro/skills/skill-name
 ```
 
 ## Listing Skills
@@ -63,7 +63,7 @@ python scripts/list_skills.py --installed
 
 Or directly:
 ```bash
-ls ~/.aloop/skills/
+ls ~/.ouro/skills/
 ```
 
 ### List Available Skills from Registry
@@ -74,13 +74,13 @@ python scripts/list_skills.py --repo owner/repo --path skills
 
 ## Behavior
 
-- Skills are installed to `~/.aloop/skills/<skill-name>`
+- Skills are installed to `~/.ouro/skills/<skill-name>`
 - Installation fails if the destination already exists (no overwrite)
 - Git clone uses `--depth 1` for efficiency
-- After installation, restart aloop to pick up new skills
+- After installation, restart ouro to pick up new skills
 
 ## Notes
 
 - Private repos require git credentials or `GITHUB_TOKEN`/`GH_TOKEN` environment variable
-- Installed skills are loaded on aloop startup
+- Installed skills are loaded on ouro startup
 - Each skill must have a valid `SKILL.md` with `name` and `description` in frontmatter

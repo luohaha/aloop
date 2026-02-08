@@ -26,14 +26,14 @@ class InstallError(Exception):
     """Installation error."""
 
 
-def aloop_home() -> Path:
-    """Get aloop home directory."""
-    return Path(os.environ.get("ALOOP_HOME", Path.home() / ".aloop"))
+def ouro_home() -> Path:
+    """Get ouro home directory."""
+    return Path(os.environ.get("OURO_HOME", Path.home() / ".ouro"))
 
 
 def skills_dir() -> Path:
     """Get skills installation directory."""
-    return aloop_home() / "skills"
+    return ouro_home() / "skills"
 
 
 def parse_url(url: str) -> tuple[str, str | None]:
@@ -94,7 +94,7 @@ def install_skill(url: str, name_override: str | None = None) -> Path:
     """Install a skill from a GitHub URL."""
     base_url, subpath = parse_url(url)
 
-    with tempfile.TemporaryDirectory(prefix="aloop-skill-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="ouro-skill-") as tmp:
         tmp_path = Path(tmp)
         clone_repo(base_url, tmp_path)
 
@@ -124,13 +124,13 @@ def install_skill(url: str, name_override: str | None = None) -> Path:
 
         print(f"[OK] Installed '{name}' to {dest}")
         print(f"    Description: {description}")
-        print("\nRestart aloop to pick up the new skill.")
+        print("\nRestart ouro to pick up the new skill.")
 
         return dest
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install aloop skill from GitHub")
+    parser = argparse.ArgumentParser(description="Install ouro skill from GitHub")
     parser.add_argument("--url", required=True, help="GitHub URL (use #path for subdirectory)")
     parser.add_argument("--name", help="Override skill name")
 
