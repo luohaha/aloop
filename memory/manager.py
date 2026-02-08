@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from llm import LiteLLMAdapter
 
+    from .long_term import LongTermMemoryManager
+
 
 class MemoryManager:
     """Central memory management system with built-in persistence.
@@ -70,6 +72,13 @@ class MemoryManager:
 
         # Optional callback to get current todo context for compression
         self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
+
+        # Long-term memory (cross-session)
+        self._long_term = None
+        if Config.LONG_TERM_MEMORY_ENABLED:
+            from .long_term import LongTermMemoryManager
+
+            self._long_term = LongTermMemoryManager(llm)
 
     @classmethod
     async def from_session(
@@ -248,6 +257,11 @@ class MemoryManager:
         context.extend(self.short_term.get_messages())
 
         return context
+
+    @property
+    def long_term(self) -> Optional["LongTermMemoryManager"]:
+        """Access the long-term memory manager (None if disabled)."""
+        return self._long_term
 
     def set_todo_context_provider(self, provider: Callable[[], Optional[str]]) -> None:
         """Set a callback to provide current todo context for compression.
