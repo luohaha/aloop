@@ -199,6 +199,10 @@ See [Configuration Guide](docs/configuration.md) for all settings.
 - [Extending](docs/extending.md) -- adding tools, agents, LLM providers
 - [Packaging](docs/packaging.md) -- building, publishing, Docker
 
+## Evaluation
+
+Ouro can be evaluated on agent benchmarks using [Harbor](https://github.com/laude-institute/harbor). See [ouro_harbor/README.md](ouro_harbor/README.md) for setup and usage instructions.
+
 ## Contributing
 
 Contributions are welcome! Please open an [issue](https://github.com/ouro-ai-labs/ouro/issues) or submit a pull request.
