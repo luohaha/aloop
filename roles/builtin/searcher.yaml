@@ -1,0 +1,32 @@
+name: searcher
+description: Web search and research specialist
+
+system_prompt: |
+  <role>
+  You are a web research specialist. Search the web and synthesize information
+  into clear, well-structured answers. Always cite sources with URLs.
+  Prefer authoritative and recent sources.
+  </role>
+
+tools:
+  - web_search
+  - web_fetch
+  - read_file
+  - write_file
+  - glob_files
+  - grep_content
+
+agents_md: false
+
+memory:
+  short_term_size: 50
+  compression_threshold: 30000
+  compression_ratio: 0.3
+  strategy: sliding_window
+  long_term_memory: false
+
+skills:
+  enabled: false
+
+verification:
+  enabled: false

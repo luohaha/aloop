@@ -28,18 +28,20 @@ class LoopAgent(BaseAgent):
         """
         self._skills_section = skills_section
 
-    SYSTEM_PROMPT = """<role>
-You are a helpful AI assistant that uses tools to accomplish tasks efficiently and reliably.
-</role>
+    # --- System prompt sections (composable per role) ---
 
-<critical_rules>
+    PROMPT_ROLE = """<role>
+You are a helpful AI assistant that uses tools to accomplish tasks efficiently and reliably.
+</role>"""
+
+    PROMPT_CRITICAL_RULES = """<critical_rules>
 IMPORTANT: Always think before acting
 IMPORTANT: Use the most efficient tool for each operation
 IMPORTANT: Manage todo lists for complex multi-step tasks
 IMPORTANT: Mark tasks completed IMMEDIATELY after finishing them
-</critical_rules>
+</critical_rules>"""
 
-<agents_md>
+    PROMPT_AGENTS_MD = """<agents_md>
 Project instructions may be defined in AGENTS.md files in the project directory structure.
 
 WHEN TO READ AGENTS.MD:
@@ -74,9 +76,9 @@ Assistant: [Immediately starts modifying code without checking AGENTS.md]
 </bad_example>
 
 NOTE: AGENTS.md is optional. If not found, proceed normally with general best practices.
-</agents_md>
+</agents_md>"""
 
-<task_management>
+    PROMPT_TASK_MANAGEMENT = """<task_management>
 Use the manage_todo_list tool for complex tasks to prevent forgetting steps.
 
 WHEN TO USE TODO LISTS:
@@ -104,9 +106,9 @@ Assistant: I'll use the todo list to track this multi-step task.
 User: Create a data pipeline that reads CSV, processes it, and generates report
 Assistant: [Immediately starts without planning, forgets steps halfway through]
 </bad_example>
-</task_management>
+</task_management>"""
 
-<tool_usage_guidelines>
+    PROMPT_TOOL_GUIDELINES = """<tool_usage_guidelines>
 For file operations:
 - Use glob_files to find files by pattern (fast, efficient)
 - Use grep_content for text/code search in files
@@ -139,9 +141,9 @@ Approach:
 2. Manually search through content
 Result: Wasteful, uses 100x more tokens
 </bad_example>
-</tool_usage_guidelines>
+</tool_usage_guidelines>"""
 
-<workflow>
+    PROMPT_WORKFLOW = """<workflow>
 For each user request, follow this ReAct pattern:
 1. THINK: Analyze what's needed, choose best tools
 2. ACT: Execute with appropriate tools
@@ -149,9 +151,9 @@ For each user request, follow this ReAct pattern:
 4. REPEAT or COMPLETE: Continue the loop or provide final answer
 
 When you have enough information, provide your final answer directly without using more tools.
-</workflow>
+</workflow>"""
 
-<complex_task_strategy>
+    PROMPT_COMPLEX_STRATEGY = """<complex_task_strategy>
 For complex tasks, combine tools to achieve an explore-plan-execute workflow:
 
 1. **EXPLORE**: Gather context before acting
@@ -172,6 +174,49 @@ When to use each approach:
 - Parallel workload → parallel_execute
 </complex_task_strategy>"""
 
+    # Full default prompt (backward compat, used by general role)
+    SYSTEM_PROMPT = "\n\n".join(
+        [
+            PROMPT_ROLE,
+            PROMPT_CRITICAL_RULES,
+            PROMPT_AGENTS_MD,
+            PROMPT_TASK_MANAGEMENT,
+            PROMPT_TOOL_GUIDELINES,
+            PROMPT_WORKFLOW,
+            PROMPT_COMPLEX_STRATEGY,
+        ]
+    )
+
+    def _build_system_prompt(self) -> str:
+        """Build system prompt based on role configuration.
+
+        If the role has a custom system_prompt, compose it with conditional
+        infrastructure sections. Otherwise use the full default SYSTEM_PROMPT.
+
+        Returns:
+            Composed system prompt string.
+        """
+        if self.role and self.role.system_prompt:
+            # Role-specific: start with role's custom prompt
+            sections = [self.role.system_prompt]
+
+            # Conditionally include infrastructure sections
+            if self.role.agents_md:
+                sections.append(self.PROMPT_AGENTS_MD)
+
+            # Include task_management if manage_todo_list is in the tool set
+            if "manage_todo_list" in self.tool_executor.tools:
+                sections.append(self.PROMPT_TASK_MANAGEMENT)
+
+            # Always include general guidelines
+            sections.append(self.PROMPT_TOOL_GUIDELINES)
+            sections.append(self.PROMPT_WORKFLOW)
+
+            return "\n\n".join(sections)
+
+        # Default (general role): use the full monolithic prompt
+        return self.SYSTEM_PROMPT
+
     async def run(self, task: str, verify: bool = True) -> str:
         """Execute ReAct loop until task is complete.
 
@@ -186,7 +231,7 @@ When to use each approach:
         # Build system message with context (only if not already in memory)
         # This allows multi-turn conversations to reuse the same system message
         if not self.memory.system_messages:
-            system_content = self.SYSTEM_PROMPT
+            system_content = self._build_system_prompt()
             try:
                 context = await format_context_prompt()
                 system_content = context + "\n" + system_content
@@ -215,7 +260,15 @@ When to use each approach:
 
         tools = self.tool_executor.get_tool_schemas()
 
-        if verify:
+        # Determine verification behavior from role
+        use_verify = verify and (self.role is None or self.role.verification.enabled)
+        ralph_max = (
+            self.role.verification.max_iterations
+            if self.role and self.role.verification.max_iterations
+            else Config.RALPH_LOOP_MAX_ITERATIONS
+        )
+
+        if use_verify:
             # Use ralph loop (outer verification wrapping the inner ReAct loop)
             result = await self._ralph_loop(
                 messages=[],  # Not used when use_memory=True
@@ -223,7 +276,7 @@ When to use each approach:
                 use_memory=True,
                 save_to_memory=True,
                 task=task,
-                max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
+                max_iterations=ralph_max,
             )
         else:
             # Plain react loop without verification

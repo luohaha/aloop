@@ -580,8 +580,11 @@ class InteractiveSession:
 
         # Display configuration
         current = self.model_manager.get_current_model()
+        role_name = getattr(self.agent, "role", None)
+        role_display = role_name.name if role_name else "general"
         config_dict = {
             "Model": current.model_id if current else "NOT CONFIGURED",
+            "Role": role_display,
             "Theme": Theme.get_theme_name(),
             "Commands": "/help for all commands",
         }
@@ -609,14 +612,23 @@ class InteractiveSession:
         if Config.TUI_STATUS_BAR:
             self.status_bar.show()
 
-        try:
-            await self.skills_registry.load()
-            # Inject skills section into agent's system prompt
-            skills_section = render_skills_section(list(self.skills_registry.skills.values()))
-            if hasattr(self.agent, "set_skills_section"):
-                self.agent.set_skills_section(skills_section)
-        except Exception as e:
-            terminal_ui.print_warning(f"Failed to load skills registry: {e}")
+        # Load skills if the role allows it
+        role = getattr(self.agent, "role", None)
+        if role is None or role.skills.enabled:
+            try:
+                await self.skills_registry.load()
+
+                # Filter to allowed skills if role specifies a whitelist
+                skills_list = list(self.skills_registry.skills.values())
+                if role and role.skills.allowed is not None:
+                    allowed = set(role.skills.allowed)
+                    skills_list = [s for s in skills_list if s.name in allowed]
+
+                skills_section = render_skills_section(skills_list)
+                if hasattr(self.agent, "set_skills_section"):
+                    self.agent.set_skills_section(skills_section)
+            except Exception as e:
+                terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
         while True:
             try:

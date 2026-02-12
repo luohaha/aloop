@@ -75,12 +75,13 @@ ouro = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure
-packages = ["agent", "agent.prompts", "agent.skills", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "tools", "utils", "utils.tui"]
+packages = ["agent", "agent.prompts", "agent.skills", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "roles", "tools", "utils", "utils.tui"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
 "ouro_harbor" = ["*.j2"]
+"roles" = ["builtin/*.yaml"]
 
 [tool.black]
 line-length = 100

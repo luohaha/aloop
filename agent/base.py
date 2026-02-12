@@ -1,10 +1,11 @@
 """Base agent class for all agent types."""
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from llm import LLMMessage, LLMResponse, StopReason, ToolResult
 from memory import MemoryManager
+from roles.types import RoleConfig
 from tools.base import BaseTool
 from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
@@ -29,6 +30,7 @@ class BaseAgent(ABC):
         tools: List[BaseTool],
         max_iterations: int = 10,
         model_manager: Optional["ModelManager"] = None,
+        role: Optional[RoleConfig] = None,
     ):
         """Initialize the agent.
 
@@ -37,24 +39,41 @@ class BaseAgent(ABC):
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
             model_manager: Optional model manager for switching models
+            role: Optional role configuration for specialized behavior
         """
         self.llm = llm
         self.max_iterations = max_iterations
         self.model_manager = model_manager
+        self.role = role
 
         # Initialize todo list system
         self.todo_list = TodoList()
 
-        # Add todo tool to the tools list if enabled
-        tools = [] if tools is None else list(tools)  # Make a copy to avoid modifying original
-
-        todo_tool = TodoTool(self.todo_list)
-        tools.append(todo_tool)
+        # Add todo tool if role allows it (in tool whitelist or no whitelist)
+        tools = [] if tools is None else list(tools)
+        has_todo = role is None or role.tools is None or "manage_todo_list" in role.tools
+        if has_todo:
+            todo_tool = TodoTool(self.todo_list)
+            tools.append(todo_tool)
 
         self.tool_executor = ToolExecutor(tools)
 
-        # Memory manager is fully owned by the agent
-        self.memory = MemoryManager(llm)
+        # Memory manager with role overrides
+        memory_kwargs: dict[str, Any] = {}
+        if role:
+            mo = role.memory
+            if mo.short_term_size is not None:
+                memory_kwargs["short_term_size"] = mo.short_term_size
+            if mo.compression_threshold is not None:
+                memory_kwargs["compression_threshold"] = mo.compression_threshold
+            if mo.compression_ratio is not None:
+                memory_kwargs["compression_ratio"] = mo.compression_ratio
+            if mo.strategy is not None:
+                memory_kwargs["compression_strategy"] = mo.strategy
+            if mo.long_term_memory is not None:
+                memory_kwargs["long_term_memory"] = mo.long_term_memory
+
+        self.memory = MemoryManager(llm, **memory_kwargs)
         self.memory.set_todo_context_provider(self._get_todo_context)
 
     async def load_session(self, session_id: str) -> None:

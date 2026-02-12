@@ -33,14 +33,41 @@ class MemoryManager:
         self,
         llm: "LiteLLMAdapter",
         session_id: Optional[str] = None,
+        short_term_size: Optional[int] = None,
+        compression_threshold: Optional[int] = None,
+        compression_ratio: Optional[float] = None,
+        compression_strategy: Optional[str] = None,
+        long_term_memory: Optional[bool] = None,
     ):
         """Initialize memory manager.
 
         Args:
             llm: LLM instance for compression
             session_id: Optional session ID (if resuming session)
+            short_term_size: Override for Config.MEMORY_SHORT_TERM_SIZE
+            compression_threshold: Override for Config.MEMORY_COMPRESSION_THRESHOLD
+            compression_ratio: Override for Config.MEMORY_COMPRESSION_RATIO
+            compression_strategy: Preferred strategy (None = auto-select)
+            long_term_memory: Override for Config.LONG_TERM_MEMORY_ENABLED
         """
         self.llm = llm
+
+        # Store config overrides as instance attributes
+        self._short_term_size = (
+            short_term_size if short_term_size is not None else Config.MEMORY_SHORT_TERM_SIZE
+        )
+        self._compression_threshold = (
+            compression_threshold
+            if compression_threshold is not None
+            else Config.MEMORY_COMPRESSION_THRESHOLD
+        )
+        self._compression_ratio = (
+            compression_ratio if compression_ratio is not None else Config.MEMORY_COMPRESSION_RATIO
+        )
+        self._preferred_strategy = compression_strategy  # None = auto-select
+        self._long_term_enabled = (
+            long_term_memory if long_term_memory is not None else Config.LONG_TERM_MEMORY_ENABLED
+        )
 
         # Store is fully owned by MemoryManager
         from .store import YamlFileMemoryStore
@@ -56,8 +83,8 @@ class MemoryManager:
             self.session_id = None
             self._session_created = False
 
-        # Initialize components using Config directly
-        self.short_term = ShortTermMemory(max_size=Config.MEMORY_SHORT_TERM_SIZE)
+        # Initialize components using instance attributes
+        self.short_term = ShortTermMemory(max_size=self._short_term_size)
         self.compressor = WorkingMemoryCompressor(llm)
         self.token_tracker = TokenTracker()
 
@@ -75,7 +102,7 @@ class MemoryManager:
 
         # Long-term memory (cross-session)
         self._long_term = None
-        if Config.LONG_TERM_MEMORY_ENABLED:
+        if self._long_term_enabled:
             from .long_term import LongTermMemoryManager
 
             self._long_term = LongTermMemoryManager(llm)
@@ -85,17 +112,19 @@ class MemoryManager:
         cls,
         session_id: str,
         llm: "LiteLLMAdapter",
+        **kwargs,
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
         Args:
             session_id: Session ID to load
             llm: LLM instance for compression
+            **kwargs: Memory override kwargs (short_term_size, compression_threshold, etc.)
 
         Returns:
             MemoryManager instance with loaded state
         """
-        manager = cls(llm=llm, session_id=session_id)
+        manager = cls(llm=llm, session_id=session_id, **kwargs)
 
         # Load session data
         session_data = await manager._store.load_session(session_id)
@@ -224,7 +253,7 @@ class MemoryManager:
         # Log memory state (stored content size, not API usage)
         logger.debug(
             f"Memory state: {self.current_tokens} stored tokens, "
-            f"{self.short_term.count()}/{Config.MEMORY_SHORT_TERM_SIZE} messages, "
+            f"{self.short_term.count()}/{self._short_term_size} messages, "
             f"full={self.short_term.is_full()}"
         )
 
@@ -238,7 +267,7 @@ class MemoryManager:
             # Log compression check details
             logger.debug(
                 f"Compression check: stored={self.current_tokens}, "
-                f"threshold={Config.MEMORY_COMPRESSION_THRESHOLD}, "
+                f"threshold={self._compression_threshold}, "
                 f"short_term_full={self.short_term.is_full()}"
             )
 
@@ -367,10 +396,10 @@ class MemoryManager:
             return False, "compression_disabled"
 
         # Hard limit: must compress
-        if self.current_tokens > Config.MEMORY_COMPRESSION_THRESHOLD:
+        if self.current_tokens > self._compression_threshold:
             return (
                 True,
-                f"hard_limit ({self.current_tokens} > {Config.MEMORY_COMPRESSION_THRESHOLD})",
+                f"hard_limit ({self.current_tokens} > {self._compression_threshold})",
             )
 
         # CRITICAL: Compress when short-term memory is full to prevent eviction
@@ -379,7 +408,7 @@ class MemoryManager:
         if self.short_term.is_full():
             return (
                 True,
-                f"short_term_full ({self.short_term.count()}/{Config.MEMORY_SHORT_TERM_SIZE} messages, "
+                f"short_term_full ({self.short_term.count()}/{self._short_term_size} messages, "
                 f"current tokens: {self.current_tokens})",
             )
 
@@ -388,12 +417,18 @@ class MemoryManager:
     def _select_strategy(self, messages: List[LLMMessage]) -> str:
         """Auto-select compression strategy based on message characteristics.
 
+        If a preferred strategy was set (via constructor), it is returned directly.
+
         Args:
             messages: Messages to analyze
 
         Returns:
             Strategy name
         """
+        # If a preferred strategy was explicitly set, use it
+        if self._preferred_strategy is not None:
+            return self._preferred_strategy
+
         # Check for tool calls
         has_tool_calls = any(self._message_has_tool_calls(msg) for msg in messages)
 
@@ -437,7 +472,7 @@ class MemoryManager:
             Target token count
         """
         original_tokens = self.current_tokens
-        target = int(original_tokens * Config.MEMORY_COMPRESSION_RATIO)
+        target = int(original_tokens * self._compression_ratio)
         return max(target, 500)  # Minimum 500 tokens for summary
 
     def _recalculate_current_tokens(self) -> int:

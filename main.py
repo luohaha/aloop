@@ -13,45 +13,41 @@ from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
 from memory import MemoryManager
-from tools.advanced_file_ops import GlobTool, GrepTool
-from tools.explore import ExploreTool
-from tools.file_ops import FileReadTool, FileWriteTool
-from tools.parallel_execute import ParallelExecutionTool
-from tools.shell import ShellTool
-from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
-from tools.smart_edit import SmartEditTool
-from tools.web_fetch import WebFetchTool
-from tools.web_search import WebSearchTool
+from roles import RoleManager
+from tools.registry import AGENT_TOOL_NAMES, add_agent_tools, create_core_tools
 from utils import setup_logger, terminal_ui
 from utils.runtime import ensure_runtime_dirs
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
 
-def create_agent(model_id: str | None = None):
+def create_agent(model_id: str | None = None, role_name: str | None = None):
     """Factory function to create agents with tools.
 
     Args:
         model_id: Optional LiteLLM model ID to use (defaults to current/default)
+        role_name: Optional role name (defaults to "general")
 
     Returns:
         Configured LoopAgent instance with all tools
     """
-    # Initialize background task manager (shared between shell tools)
-    task_manager = BackgroundTaskManager.get_instance()
+    # Resolve role
+    role_manager = RoleManager()
+    role_name = role_name or "general"
+    role = role_manager.get_role(role_name)
+    if not role:
+        available = ", ".join(role_manager.get_role_names())
+        raise ValueError(f"Role '{role_name}' not found. Available: {available}")
 
-    # Initialize base tools
-    tools = [
-        FileReadTool(),
-        FileWriteTool(),
-        WebSearchTool(),
-        WebFetchTool(),
-        GlobTool(),
-        GrepTool(),
-        SmartEditTool(),
-        ShellTool(task_manager=task_manager),
-        ShellTaskStatusTool(task_manager=task_manager),
-    ]
+    # Create tools filtered by role
+    tool_names = role.tools  # None = all tools
+    # Filter to only core tools when role specifies a whitelist
+    core_tool_names = None
+    if tool_names is not None:
+        from tools.registry import CORE_TOOLS
+
+        core_tool_names = [n for n in tool_names if n in CORE_TOOLS]
+    tools = create_core_tools(names=core_tool_names)
 
     # Initialize model manager
     model_manager = ModelManager()
@@ -95,11 +91,14 @@ def create_agent(model_id: str | None = None):
         tools=tools,
         max_iterations=Config.MAX_ITERATIONS,
         model_manager=model_manager,
+        role=role,
     )
 
-    # Add tools that require agent reference
-    agent.tool_executor.add_tool(ExploreTool(agent))
-    agent.tool_executor.add_tool(ParallelExecutionTool(agent))
+    # Add agent-reference tools (filtered by role)
+    agent_tool_filter = None
+    if tool_names is not None:
+        agent_tool_filter = [n for n in tool_names if n in AGENT_TOOL_NAMES]
+    add_agent_tools(agent, names=agent_tool_filter)
 
     return agent
 
@@ -163,6 +162,11 @@ def main():
         const="latest",
         help="Resume a previous session (session ID prefix or 'latest')",
     )
+    parser.add_argument(
+        "--role",
+        type=str,
+        help="Agent role (e.g., searcher, debugger, coder). Default: general",
+    )
 
     args = parser.parse_args()
 
@@ -193,7 +197,7 @@ def main():
     # Create agent with optional model selection. If we're going into interactive mode and
     # models aren't configured yet, enter a setup session first.
     try:
-        agent = create_agent(model_id=args.model)
+        agent = create_agent(model_id=args.model, role_name=args.role)
     except ValueError as e:
         if args.task:
             terminal_ui.print_error(str(e), title="Model Configuration Error")
@@ -209,7 +213,7 @@ def main():
             return
 
         # Retry after setup.
-        agent = create_agent(model_id=args.model)
+        agent = create_agent(model_id=args.model, role_name=args.role)
 
     async def _run() -> None:
         # Load resumed session if requested
@@ -224,17 +228,26 @@ def main():
         # Single-turn mode: execute one task and exit
         task = args.task
 
-        skills_registry = SkillsRegistry()
-        try:
-            await skills_registry.load()
-            # Inject skills section into agent's system prompt
-            skills_section = render_skills_section(list(skills_registry.skills.values()))
-            agent.set_skills_section(skills_section)
-            # Resolve explicit skill/command invocations
-            resolved = await skills_registry.resolve_user_input(task)
-            task = resolved.rendered
-        except Exception as e:
-            terminal_ui.print_warning(f"Failed to load skills registry: {e}")
+        # Load skills if the role allows it
+        role = agent.role
+        if role is None or role.skills.enabled:
+            skills_registry = SkillsRegistry()
+            try:
+                await skills_registry.load()
+
+                # Filter to allowed skills if role specifies a whitelist
+                skills_list = list(skills_registry.skills.values())
+                if role and role.skills.allowed is not None:
+                    allowed = set(role.skills.allowed)
+                    skills_list = [s for s in skills_list if s.name in allowed]
+
+                skills_section = render_skills_section(skills_list)
+                agent.set_skills_section(skills_section)
+                # Resolve explicit skill/command invocations
+                resolved = await skills_registry.resolve_user_input(task)
+                task = resolved.rendered
+            except Exception as e:
+                terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
         # Quiet mode: suppress all Rich UI output, print raw result only
         terminal_ui.console = Console(quiet=True)

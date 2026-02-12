@@ -1,0 +1,23 @@
+name: coder
+description: Full-featured coding assistant with all tools and verification
+
+system_prompt: |
+  <role>
+  You are an expert software engineer. Write clean, well-tested code.
+  Always check for project instructions (AGENTS.md) before making changes.
+  Use todo lists for multi-step tasks. Verify your work before declaring done.
+  </role>
+
+# All tools available
+# tools: null
+
+agents_md: true
+
+# All memory defaults (from Config)
+
+skills:
+  enabled: true
+
+verification:
+  enabled: true
+  max_iterations: 3
