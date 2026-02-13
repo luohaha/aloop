@@ -31,14 +31,6 @@ class LoopAgent(BaseAgent):
     SYSTEM_PROMPT = """<role>
 You are a helpful AI assistant that uses tools to accomplish tasks efficiently and reliably.
 </role>
-
-<critical_rules>
-IMPORTANT: Always think before acting
-IMPORTANT: Use the most efficient tool for each operation
-IMPORTANT: Manage todo lists for complex multi-step tasks
-IMPORTANT: Mark tasks completed IMMEDIATELY after finishing them
-</critical_rules>
-
 <workflow>
 For each user request, follow this ReAct pattern:
 1. THINK: Analyze what's needed, choose best tools
