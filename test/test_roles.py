@@ -53,13 +53,15 @@ class TestRoleManager:
 
     def test_general_always_exists(self):
         """General role must always be available even with empty directories."""
-        with patch("roles.manager.BUILTIN_ROLES_DIR", Path("/nonexistent")):
-            with patch("roles.manager.USER_ROLES_DIR", Path("/nonexistent")):
-                mgr = RoleManager()
-                assert "general" in mgr.roles
-                role = mgr.get_role("general")
-                assert role is not None
-                assert role.name == "general"
+        with (
+            patch("roles.manager.BUILTIN_ROLES_DIR", Path("/nonexistent")),
+            patch("roles.manager.USER_ROLES_DIR", Path("/nonexistent")),
+        ):
+            mgr = RoleManager()
+            assert "general" in mgr.roles
+            role = mgr.get_role("general")
+            assert role is not None
+            assert role.name == "general"
 
     def test_loads_builtin_roles(self):
         """Builtin roles directory should be loaded."""
@@ -90,12 +92,16 @@ class TestRoleManager:
         """User roles should override builtin roles of the same name."""
         user_dir = tmp_path / "roles"
         user_dir.mkdir()
-        (user_dir / "searcher.yaml").write_text(textwrap.dedent("""\
+        (user_dir / "searcher.yaml").write_text(
+            textwrap.dedent(
+                """\
             name: searcher
             description: Custom searcher
             system_prompt: |
               Custom prompt
-            """))
+            """
+            )
+        )
 
         with patch("roles.manager.USER_ROLES_DIR", user_dir):
             mgr = RoleManager()
@@ -189,14 +195,15 @@ class TestToolFiltering:
         assert "read_file" in role.tools
         assert "shell" not in role.tools
 
-    def test_todo_tool_in_whitelist(self):
-        """manage_todo_list in whitelist means TodoTool should be added."""
+    def test_todo_tool_always_present(self):
+        """TodoTool is always available regardless of role tool whitelist."""
         role = RoleConfig(
-            name="with_todo",
-            description="has todo",
-            tools=["read_file", "manage_todo_list"],
+            name="no_todo_in_list",
+            description="no todo listed",
+            tools=["read_file"],
         )
-        assert "manage_todo_list" in role.tools
+        # manage_todo_list not in role.tools, but TodoTool is still added by BaseAgent
+        assert "manage_todo_list" not in role.tools
 
     def test_no_tools_means_all(self):
         """tools=None means all tools available."""
@@ -233,7 +240,6 @@ class TestSystemPromptComposition:
         """General role (system_prompt=None) should use full SYSTEM_PROMPT."""
         from agent.agent import LoopAgent
 
-        role = RoleConfig(name="general", description="general")
         # We can't call _build_system_prompt without a full agent, but we can
         # verify the SYSTEM_PROMPT contains all sections
         assert "<role>" in LoopAgent.SYSTEM_PROMPT

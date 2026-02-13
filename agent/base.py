@@ -49,12 +49,9 @@ class BaseAgent(ABC):
         # Initialize todo list system
         self.todo_list = TodoList()
 
-        # Add todo tool if role allows it (in tool whitelist or no whitelist)
+        # TodoTool is always available regardless of role tool whitelist
         tools = [] if tools is None else list(tools)
-        has_todo = role is None or role.tools is None or "manage_todo_list" in role.tools
-        if has_todo:
-            todo_tool = TodoTool(self.todo_list)
-            tools.append(todo_tool)
+        tools.append(TodoTool(self.todo_list))
 
         self.tool_executor = ToolExecutor(tools)
 
