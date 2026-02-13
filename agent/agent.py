@@ -58,9 +58,6 @@ For file operations:
 - Use edit_file for simple append/insert operations only
 - Use write_file only for creating new files or complete rewrites
 
-CRITICAL: Never read multiple large files in a single iteration - this causes context overflow!
-Instead: Use grep_content to find specific information, then read only what you need.
-
 For complex tasks:
 - Use manage_todo_list to track progress
 - Break into smaller, manageable steps
