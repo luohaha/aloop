@@ -276,7 +276,6 @@ class TestSystemPromptComposition:
         from agent.agent import LoopAgent
 
         assert hasattr(LoopAgent, "PROMPT_ROLE")
-        assert hasattr(LoopAgent, "PROMPT_CRITICAL_RULES")
         assert hasattr(LoopAgent, "PROMPT_AGENTS_MD")
         assert hasattr(LoopAgent, "PROMPT_TASK_MANAGEMENT")
         assert hasattr(LoopAgent, "PROMPT_TOOL_GUIDELINES")

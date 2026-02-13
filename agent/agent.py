@@ -23,13 +23,6 @@ class LoopAgent(BaseAgent):
 You are a helpful AI assistant that uses tools to accomplish tasks efficiently and reliably.
 </role>"""
 
-    PROMPT_CRITICAL_RULES = """<critical_rules>
-IMPORTANT: Always think before acting
-IMPORTANT: Use the most efficient tool for each operation
-IMPORTANT: Manage todo lists for complex multi-step tasks
-IMPORTANT: Mark tasks completed IMMEDIATELY after finishing them
-</critical_rules>"""
-
     PROMPT_AGENTS_MD = """<agents_md>
 Project instructions may be defined in AGENTS.md files in the project directory structure.
 
@@ -164,7 +157,6 @@ When to use each approach:
     SYSTEM_PROMPT = "\n\n".join(
         [
             PROMPT_ROLE,
-            PROMPT_CRITICAL_RULES,
             PROMPT_WORKFLOW,
             PROMPT_TOOL_GUIDELINES,
             PROMPT_TASK_MANAGEMENT,
