@@ -9,24 +9,13 @@ from utils import terminal_ui
 
 from .base import BaseAgent
 from .context import format_context_prompt
+from .skills import render_skills_section
 
 logger = logging.getLogger(__name__)
 
 
 class LoopAgent(BaseAgent):
     """Primary agent implementation — one unified loop for all tasks."""
-
-    # Skills section to inject into system prompt (set by caller)
-    _skills_section: Optional[str] = None
-
-    def set_skills_section(self, skills_section: Optional[str]) -> None:
-        """Set the skills section to inject into system prompt.
-
-        Args:
-            skills_section: Rendered skills section from render_skills_section(),
-                           or None to disable skills injection.
-        """
-        self._skills_section = skills_section
 
     # --- System prompt sections (composable per role) ---
 
@@ -197,16 +186,8 @@ When to use each approach:
             Composed system prompt string.
         """
         if self.role and self.role.system_prompt:
-            # Role-specific: start with role's custom prompt
-            sections = [self.role.system_prompt]
-
-            # Append role-specific guidelines
-            if self.role.guidelines:
-                bullets = "\n".join(f"- {g}" for g in self.role.guidelines)
-                sections.append(f"<guidelines>\n{bullets}\n</guidelines>")
-
-            # Core workflow (ReAct pattern)
-            sections.append(self.PROMPT_WORKFLOW)
+            # Role-specific: start with role's custom prompt + workflow
+            sections = [self.role.system_prompt, self.PROMPT_WORKFLOW]
 
             # Conditionally include infrastructure sections
             if self.role.agents_md:
@@ -226,6 +207,63 @@ When to use each approach:
         # Default (general role): use the full monolithic prompt
         return self.SYSTEM_PROMPT
 
+    def _load_skills_section(self) -> Optional[str]:
+        """Load and render the skills section based on role configuration.
+
+        Returns:
+            Rendered skills section string, or None if skills are disabled or empty.
+        """
+        role = self.role
+        if role is not None and not role.skills.enabled:
+            return None
+
+        skills_list = list(self.skills_registry.skills.values())
+        if not skills_list:
+            return None
+
+        # Filter to allowed skills if the role specifies a whitelist
+        if role and role.skills.allowed is not None:
+            allowed = set(role.skills.allowed)
+            skills_list = [s for s in skills_list if s.name in allowed]
+
+        return render_skills_section(skills_list)
+
+    async def _build_system_content(self) -> str:
+        """Build the complete system message content.
+
+        Composes: role system prompt + environment context + long-term memory + skills.
+
+        Returns:
+            Complete system content string.
+        """
+        system_content = self._build_system_prompt()
+
+        # Environment context
+        try:
+            context = await format_context_prompt()
+            system_content = system_content + "\n" + context
+        except Exception:
+            pass
+
+        # Long-term memory
+        if self.memory.long_term:
+            try:
+                ltm_section = await self.memory.long_term.load_and_format()
+                if ltm_section:
+                    system_content = system_content + "\n" + ltm_section
+            except Exception:
+                logger.warning("Failed to load long-term memory", exc_info=True)
+
+        # Skills
+        try:
+            skills_section = self._load_skills_section()
+            if skills_section:
+                system_content = system_content + "\n\n" + skills_section
+        except Exception:
+            logger.warning("Failed to load skills section", exc_info=True)
+
+        return system_content
+
     async def run(self, task: str, verify: bool = True) -> str:
         """Execute ReAct loop until task is complete.
 
@@ -240,28 +278,7 @@ When to use each approach:
         # Build system message with context (only if not already in memory)
         # This allows multi-turn conversations to reuse the same system message
         if not self.memory.system_messages:
-            system_content = self._build_system_prompt()
-            try:
-                context = await format_context_prompt()
-                system_content = context + "\n" + system_content
-            except Exception:
-                # If context gathering fails, continue without it
-                pass
-
-            # Inject long-term memory instructions + current memories
-            if self.memory.long_term:
-                try:
-                    ltm_section = await self.memory.long_term.load_and_format()
-                    if ltm_section:
-                        system_content = system_content + "\n" + ltm_section
-                except Exception:
-                    logger.warning("Failed to load long-term memory", exc_info=True)
-
-            # Inject skills section if available
-            if self._skills_section:
-                system_content = system_content + "\n\n" + self._skills_section
-
-            # Add system message only on first turn
+            system_content = await self._build_system_content()
             await self.memory.add_message(LLMMessage(role="system", content=system_content))
 
         # Add user task/message

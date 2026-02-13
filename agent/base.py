@@ -11,6 +11,7 @@ from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
 from utils.tui.progress import AsyncSpinner
 
+from .skills import SkillsRegistry
 from .todo import TodoList
 from .tool_executor import ToolExecutor
 from .verification import LLMVerifier, VerificationResult, Verifier
@@ -55,6 +56,7 @@ class BaseAgent(ABC):
             tools.append(TodoTool(self.todo_list))
 
         self.tool_executor = ToolExecutor(tools)
+        self.skills_registry = SkillsRegistry()
 
         # Memory manager with role overrides
         memory_kwargs: dict[str, Any] = {}
@@ -68,8 +70,7 @@ class BaseAgent(ABC):
                 memory_kwargs["compression_ratio"] = mo.compression_ratio
             if mo.strategy is not None:
                 memory_kwargs["compression_strategy"] = mo.strategy
-            if mo.long_term_memory is not None:
-                memory_kwargs["long_term_memory"] = mo.long_term_memory
+            memory_kwargs["long_term_memory"] = mo.long_term_memory
 
         self.memory = MemoryManager(llm, **memory_kwargs)
         self.memory.set_todo_context_provider(self._get_todo_context)

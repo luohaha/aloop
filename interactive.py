@@ -6,7 +6,6 @@ import signal
 
 from rich.table import Table
 
-from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from llm import ModelManager
 from memory import MemoryManager
@@ -87,8 +86,6 @@ class InteractiveSession:
         # Initialize status bar
         self.status_bar = StatusBar(terminal_ui.console)
         self.status_bar.update(mode="LOOP")
-        self.skills_registry = SkillsRegistry()
-
         # Set up signal handler for graceful interruption
         self._setup_signal_handler()
 
@@ -389,7 +386,7 @@ class InteractiveSession:
             if not source:
                 terminal_ui.print_warning("Install cancelled")
                 return
-            result = await self.skills_registry.install_skill(source)
+            result = await self.agent.skills_registry.install_skill(source)
             if result:
                 terminal_ui.print_success(f"Installed skill: {result.name}")
                 terminal_ui.print_info("Restart ouro to reload skills registry")
@@ -400,14 +397,14 @@ class InteractiveSession:
             if not name:
                 terminal_ui.print_warning("Uninstall cancelled")
                 return
-            ok = await self.skills_registry.uninstall_skill(name)
+            ok = await self.agent.skills_registry.uninstall_skill(name)
             if ok:
                 terminal_ui.print_success(f"Removed skill: {name}")
                 terminal_ui.print_info("Restart ouro to reload skills registry")
 
     def _show_skills_list(self) -> None:
         colors = Theme.get_colors()
-        skills = sorted(self.skills_registry.skills.values(), key=lambda s: s.name)
+        skills = sorted(self.agent.skills_registry.skills.values(), key=lambda s: s.name)
         if not skills:
             terminal_ui.print_warning("No installed skills found")
             terminal_ui.console.print()
@@ -612,21 +609,11 @@ class InteractiveSession:
         if Config.TUI_STATUS_BAR:
             self.status_bar.show()
 
-        # Load skills if the role allows it
+        # Load skills registry (prompt injection handled by agent.run on first turn)
         role = getattr(self.agent, "role", None)
         if role is None or role.skills.enabled:
             try:
-                await self.skills_registry.load()
-
-                # Filter to allowed skills if role specifies a whitelist
-                skills_list = list(self.skills_registry.skills.values())
-                if role and role.skills.allowed is not None:
-                    allowed = set(role.skills.allowed)
-                    skills_list = [s for s in skills_list if s.name in allowed]
-
-                skills_section = render_skills_section(skills_list)
-                if hasattr(self.agent, "set_skills_section"):
-                    self.agent.set_skills_section(skills_section)
+                await self.agent.skills_registry.load()
             except Exception as e:
                 terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
@@ -661,7 +648,7 @@ class InteractiveSession:
                     self.status_bar.update(is_processing=True)
 
                 try:
-                    resolved = await self.skills_registry.resolve_user_input(user_input)
+                    resolved = await self.agent.skills_registry.resolve_user_input(user_input)
                     # Create a task for the agent run so it can be cancelled
                     self.current_task = asyncio.create_task(
                         self.agent.run(resolved.rendered, verify=False)

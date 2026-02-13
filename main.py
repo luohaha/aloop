@@ -8,7 +8,6 @@ import warnings
 from rich.console import Console
 
 from agent.agent import LoopAgent
-from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
@@ -244,23 +243,12 @@ def main():
         # Single-turn mode: execute one task and exit
         task = args.task
 
-        # Load skills if the role allows it
+        # Load skills and resolve slash commands (prompt injection handled by agent.run)
         role = agent.role
         if role is None or role.skills.enabled:
-            skills_registry = SkillsRegistry()
             try:
-                await skills_registry.load()
-
-                # Filter to allowed skills if role specifies a whitelist
-                skills_list = list(skills_registry.skills.values())
-                if role and role.skills.allowed is not None:
-                    allowed = set(role.skills.allowed)
-                    skills_list = [s for s in skills_list if s.name in allowed]
-
-                skills_section = render_skills_section(skills_list)
-                agent.set_skills_section(skills_section)
-                # Resolve explicit skill/command invocations
-                resolved = await skills_registry.resolve_user_input(task)
+                await agent.skills_registry.load()
+                resolved = await agent.skills_registry.resolve_user_input(task)
                 task = resolved.rendered
             except Exception as e:
                 terminal_ui.print_warning(f"Failed to load skills registry: {e}")

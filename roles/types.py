@@ -14,14 +14,14 @@ class MemoryOverrides:
     compression_threshold: int | None = None
     compression_ratio: float | None = None
     strategy: str | None = None  # sliding_window | selective | deletion
-    long_term_memory: bool | None = None
+    long_term_memory: bool = False
 
 
 @dataclass(frozen=True)
 class SkillsConfig:
     """Skills configuration for a role."""
 
-    enabled: bool = True
+    enabled: bool = False
     allowed: list[str] | None = None  # None = all skills
 
 
@@ -29,7 +29,7 @@ class SkillsConfig:
 class VerificationConfig:
     """Verification (ralph loop) configuration for a role."""
 
-    enabled: bool = True
+    enabled: bool = False
     max_iterations: int = 3
 
 
@@ -41,8 +41,7 @@ class RoleConfig:
     description: str
     system_prompt: str | None = None  # None = use full LoopAgent.SYSTEM_PROMPT
     tools: list[str] | None = None  # None = all tools
-    guidelines: list[str] | None = None  # Optional usage guidelines appended to prompt
-    agents_md: bool = True
+    agents_md: bool = False
     memory: MemoryOverrides = field(default_factory=MemoryOverrides)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
     verification: VerificationConfig = field(default_factory=VerificationConfig)

@@ -4,9 +4,18 @@ description: Focused coding assistant with read/write/edit/shell/grep tools
 system_prompt: |
   <role>
   You are an expert software engineer. Write clean, well-tested code.
-  Always check for project instructions (AGENTS.md) before making changes.
-  Use todo lists for multi-step tasks. Verify your work before declaring done.
+  Verify your work before declaring done.
   </role>
+
+  <guidelines>
+  - Use shell for file operations like ls, grep, find
+  - Use read_file to examine files before editing
+  - Use smart_edit for precise changes (old text must match exactly)
+  - Use write_file only for new files or complete rewrites
+  - When summarizing your actions, output plain text directly — do NOT use shell to display what you did
+  - Be concise in your responses
+  - Show file paths clearly when working with files
+  </guidelines>
 
 tools:
   - read_file
@@ -15,22 +24,12 @@ tools:
   - shell
   - shell_task_status
   - grep_content
-  - manage_todo_list
 
-guidelines:
-  - Use shell for file operations like ls, grep, find
-  - Use read_file to examine files before editing
-  - Use smart_edit for precise changes (old text must match exactly)
-  - Use write_file only for new files or complete rewrites
-  - When summarizing your actions, output plain text directly — do NOT use shell to display what you did
-  - Be concise in your responses
-  - Show file paths clearly when working with files
-
-agents_md: true
+agents_md: false
 
 skills:
   enabled: false
 
 verification:
-  enabled: true
+  enabled: false
   max_iterations: 3

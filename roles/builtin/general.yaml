@@ -3,5 +3,14 @@ description: General-purpose assistant with all tools and features enabled
 
 # system_prompt: null  → uses full LoopAgent.SYSTEM_PROMPT
 # tools: null          → all tools available
-# agents_md: true      → AGENTS.md discovery enabled
-# All features on by default (skills, verification, long-term memory)
+
+agents_md: true
+
+memory:
+  long_term_memory: true
+
+skills:
+  enabled: true
+
+verification:
+  enabled: true

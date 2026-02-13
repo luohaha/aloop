@@ -18,10 +18,14 @@ class TestRoleConfig:
         assert role.name == "test"
         assert role.system_prompt is None
         assert role.tools is None
-        assert role.agents_md is True
+        assert role.agents_md is False
         assert role.memory == MemoryOverrides()
         assert role.skills == SkillsConfig()
         assert role.verification == VerificationConfig()
+        # All features off by default
+        assert role.memory.long_term_memory is False
+        assert role.skills.enabled is False
+        assert role.verification.enabled is False
         assert role.source_path is None
 
     def test_frozen(self):
@@ -35,16 +39,16 @@ class TestRoleConfig:
         assert mo.compression_threshold is None
         assert mo.compression_ratio is None
         assert mo.strategy is None
-        assert mo.long_term_memory is None
+        assert mo.long_term_memory is False
 
     def test_skills_config_defaults(self):
         sc = SkillsConfig()
-        assert sc.enabled is True
+        assert sc.enabled is False
         assert sc.allowed is None
 
     def test_verification_config_defaults(self):
         vc = VerificationConfig()
-        assert vc.enabled is True
+        assert vc.enabled is False
         assert vc.max_iterations == 3
 
 
@@ -174,14 +178,11 @@ class TestBuiltinRoles:
         assert "smart_edit" in role.tools
         assert "shell" in role.tools
         assert "grep_content" in role.tools
-        assert "manage_todo_list" in role.tools
+        assert "manage_todo_list" not in role.tools
         assert "web_search" not in role.tools
-        assert role.guidelines is not None
-        assert len(role.guidelines) > 0
-        assert role.agents_md is True
+        assert role.agents_md is False
         assert role.skills.enabled is False
-        assert role.verification.enabled is True
-        assert role.verification.max_iterations == 3
+        assert role.verification.enabled is False
 
     def test_general_role(self):
         mgr = RoleManager()
@@ -189,6 +190,11 @@ class TestBuiltinRoles:
         assert role is not None
         assert role.system_prompt is None  # Uses full LoopAgent.SYSTEM_PROMPT
         assert role.tools is None  # All tools
+        # General role explicitly enables all features
+        assert role.agents_md is True
+        assert role.memory.long_term_memory is True
+        assert role.skills.enabled is True
+        assert role.verification.enabled is True
 
 
 class TestToolFiltering:
@@ -228,27 +234,6 @@ class TestToolFiltering:
         assert role.tools is None
 
 
-class TestGuidelines:
-    """Test guidelines field on roles."""
-
-    def test_no_guidelines_by_default(self):
-        role = RoleConfig(name="test", description="test")
-        assert role.guidelines is None
-
-    def test_guidelines_from_yaml(self):
-        mgr = RoleManager()
-        role = mgr.get_role("coder")
-        assert role is not None
-        assert role.guidelines is not None
-        assert any("concise" in g.lower() for g in role.guidelines)
-
-    def test_general_no_guidelines(self):
-        mgr = RoleManager()
-        role = mgr.get_role("general")
-        assert role is not None
-        assert role.guidelines is None
-
-
 class TestMemoryOverrides:
     """Test memory configuration overrides from roles."""
 
@@ -262,13 +247,14 @@ class TestMemoryOverrides:
         assert role.memory.strategy == "sliding_window"
         assert role.memory.long_term_memory is False
 
-    def test_general_no_overrides(self):
+    def test_general_memory_config(self):
         mgr = RoleManager()
         role = mgr.get_role("general")
         assert role is not None
-        # General role has no overrides (all None)
+        # General role: no size overrides, but LTM explicitly enabled
         assert role.memory.short_term_size is None
         assert role.memory.compression_threshold is None
+        assert role.memory.long_term_memory is True
 
 
 class TestSystemPromptComposition:

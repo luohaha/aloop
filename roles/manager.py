@@ -87,14 +87,14 @@ class RoleManager:
             compression_threshold=mem_data.get("compression_threshold"),
             compression_ratio=mem_data.get("compression_ratio"),
             strategy=mem_data.get("strategy"),
-            long_term_memory=mem_data.get("long_term_memory"),
+            long_term_memory=mem_data.get("long_term_memory", False),
         )
 
         # Parse skills config
         skills_data = data.get("skills")
         if skills_data is not None:
             skills = SkillsConfig(
-                enabled=skills_data.get("enabled", True),
+                enabled=skills_data.get("enabled", False),
                 allowed=skills_data.get("allowed"),
             )
         else:
@@ -104,7 +104,7 @@ class RoleManager:
         verify_data = data.get("verification")
         if verify_data is not None:
             verification = VerificationConfig(
-                enabled=verify_data.get("enabled", True),
+                enabled=verify_data.get("enabled", False),
                 max_iterations=verify_data.get("max_iterations", 3),
             )
         else:
@@ -115,8 +115,7 @@ class RoleManager:
             description=description,
             system_prompt=data.get("system_prompt"),
             tools=data.get("tools"),
-            guidelines=data.get("guidelines"),
-            agents_md=data.get("agents_md", True),
+            agents_md=data.get("agents_md", False),
             memory=memory,
             skills=skills,
             verification=verification,
@@ -129,6 +128,10 @@ class RoleManager:
         return RoleConfig(
             name="general",
             description="General-purpose assistant with all tools and features enabled",
+            agents_md=True,
+            memory=MemoryOverrides(long_term_memory=True),
+            skills=SkillsConfig(enabled=True),
+            verification=VerificationConfig(enabled=True),
         )
 
     def get_role(self, name: str) -> RoleConfig | None:

@@ -228,7 +228,6 @@ async def test_run_dispatches_to_ralph_loop():
     agent.tool_executor = MagicMock()
     agent.tool_executor.get_tool_schemas = MagicMock(return_value=[])
     agent.role = None
-    agent._skills_section = None
 
     agent._ralph_loop = AsyncMock(return_value="ralph result")
     agent._print_memory_stats = MagicMock()
