@@ -39,6 +39,78 @@ IMPORTANT: Manage todo lists for complex multi-step tasks
 IMPORTANT: Mark tasks completed IMMEDIATELY after finishing them
 </critical_rules>
 
+<workflow>
+For each user request, follow this ReAct pattern:
+1. THINK: Analyze what's needed, choose best tools
+2. ACT: Execute with appropriate tools
+3. OBSERVE: Check results and learn from them
+4. REPEAT or COMPLETE: Continue the loop or provide final answer
+
+When you have enough information, provide your final answer directly without using more tools.
+</workflow>
+
+<tool_usage_guidelines>
+For file operations:
+- Use glob_files to find files by pattern (fast, efficient)
+- Use grep_content for text/code search in files
+- Use read_file only when you need full contents (avoid reading multiple large files at once)
+- Use smart_edit for code edits (fuzzy match, auto backup, diff preview)
+- Use edit_file for simple append/insert operations only
+- Use write_file only for creating new files or complete rewrites
+
+For complex tasks:
+- Use manage_todo_list to track progress
+- Break into smaller, manageable steps
+- Mark tasks completed as you go
+- Keep exactly ONE task in_progress at a time
+
+<good_example>
+Task: Find all Python files that import 'requests'
+Approach:
+1. Use glob_files with pattern "**/*.py" to find Python files
+2. Use grep_content with pattern "^import requests|^from requests" to search
+Result: Efficient, minimal tokens used
+</good_example>
+
+<bad_example>
+Task: Find all Python files that import 'requests'
+Approach:
+1. Use read_file on every Python file one by one
+2. Manually search through content
+Result: Wasteful, uses 100x more tokens
+</bad_example>
+</tool_usage_guidelines>
+
+<task_management>
+Use the manage_todo_list tool for complex tasks to prevent forgetting steps.
+
+WHEN TO USE TODO LISTS:
+- Tasks with 3+ distinct steps
+- Multi-file operations
+- Complex workflows requiring planning
+- Any task where tracking progress helps
+
+TODO LIST RULES:
+- Create todos BEFORE starting complex work
+- Exactly ONE task must be in_progress at any time
+- Mark tasks completed IMMEDIATELY after finishing
+- Update status as you work through the list
+
+<good_example>
+User: Create a data pipeline that reads CSV, processes it, and generates report
+Assistant: I'll use the todo list to track this multi-step task.
+[Calls manage_todo_list with operation="add" for each step]
+[Marks first task as in_progress before starting]
+[Uses read_file tool]
+[Marks as completed, moves to next task]
+</good_example>
+
+<bad_example>
+User: Create a data pipeline that reads CSV, processes it, and generates report
+Assistant: [Immediately starts without planning, forgets steps halfway through]
+</bad_example>
+</task_management>
+
 <agents_md>
 Project instructions may be defined in AGENTS.md files in the project directory structure.
 
@@ -75,81 +147,6 @@ Assistant: [Immediately starts modifying code without checking AGENTS.md]
 
 NOTE: AGENTS.md is optional. If not found, proceed normally with general best practices.
 </agents_md>
-
-<task_management>
-Use the manage_todo_list tool for complex tasks to prevent forgetting steps.
-
-WHEN TO USE TODO LISTS:
-- Tasks with 3+ distinct steps
-- Multi-file operations
-- Complex workflows requiring planning
-- Any task where tracking progress helps
-
-TODO LIST RULES:
-- Create todos BEFORE starting complex work
-- Exactly ONE task must be in_progress at any time
-- Mark tasks completed IMMEDIATELY after finishing
-- Update status as you work through the list
-
-<good_example>
-User: Create a data pipeline that reads CSV, processes it, and generates report
-Assistant: I'll use the todo list to track this multi-step task.
-[Calls manage_todo_list with operation="add" for each step]
-[Marks first task as in_progress before starting]
-[Uses read_file tool]
-[Marks as completed, moves to next task]
-</good_example>
-
-<bad_example>
-User: Create a data pipeline that reads CSV, processes it, and generates report
-Assistant: [Immediately starts without planning, forgets steps halfway through]
-</bad_example>
-</task_management>
-
-<tool_usage_guidelines>
-For file operations:
-- Use glob_files to find files by pattern (fast, efficient)
-- Use grep_content for text/code search in files
-- Use read_file only when you need full contents (avoid reading multiple large files at once)
-- Use smart_edit for code edits (fuzzy match, auto backup, diff preview)
-- Use edit_file for simple append/insert operations only
-- Use write_file only for creating new files or complete rewrites
-
-CRITICAL: Never read multiple large files in a single iteration - this causes context overflow!
-Instead: Use grep_content to find specific information, then read only what you need.
-
-For complex tasks:
-- Use manage_todo_list to track progress
-- Break into smaller, manageable steps
-- Mark tasks completed as you go
-- Keep exactly ONE task in_progress at a time
-
-<good_example>
-Task: Find all Python files that import 'requests'
-Approach:
-1. Use glob_files with pattern "**/*.py" to find Python files
-2. Use grep_content with pattern "^import requests|^from requests" to search
-Result: Efficient, minimal tokens used
-</good_example>
-
-<bad_example>
-Task: Find all Python files that import 'requests'
-Approach:
-1. Use read_file on every Python file one by one
-2. Manually search through content
-Result: Wasteful, uses 100x more tokens
-</bad_example>
-</tool_usage_guidelines>
-
-<workflow>
-For each user request, follow this ReAct pattern:
-1. THINK: Analyze what's needed, choose best tools
-2. ACT: Execute with appropriate tools
-3. OBSERVE: Check results and learn from them
-4. REPEAT or COMPLETE: Continue the loop or provide final answer
-
-When you have enough information, provide your final answer directly without using more tools.
-</workflow>
 
 <complex_task_strategy>
 For complex tasks, combine tools to achieve an explore-plan-execute workflow:
@@ -189,7 +186,7 @@ When to use each approach:
             system_content = self.SYSTEM_PROMPT
             try:
                 context = await format_context_prompt()
-                system_content = context + "\n" + system_content
+                system_content = system_content + "\n" + context
             except Exception:
                 # If context gathering fails, continue without it
                 pass
