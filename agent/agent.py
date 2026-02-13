@@ -211,6 +211,11 @@ When to use each approach:
             sections.append(self.PROMPT_TOOL_GUIDELINES)
             sections.append(self.PROMPT_WORKFLOW)
 
+            # Include complex task strategy when explore/parallel tools are available
+            tools = self.tool_executor.tools
+            if "explore_context" in tools or "parallel_execute" in tools:
+                sections.append(self.PROMPT_COMPLEX_STRATEGY)
+
             return "\n\n".join(sections)
 
         # Default (general role): use the full monolithic prompt
