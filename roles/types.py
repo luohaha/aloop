@@ -41,6 +41,7 @@ class RoleConfig:
     description: str
     system_prompt: str | None = None  # None = use full LoopAgent.SYSTEM_PROMPT
     tools: list[str] | None = None  # None = all tools
+    guidelines: list[str] | None = None  # Optional usage guidelines appended to prompt
     agents_md: bool = True
     memory: MemoryOverrides = field(default_factory=MemoryOverrides)
     skills: SkillsConfig = field(default_factory=SkillsConfig)

@@ -176,6 +176,8 @@ class TestBuiltinRoles:
         assert "grep_content" in role.tools
         assert "manage_todo_list" in role.tools
         assert "web_search" not in role.tools
+        assert role.guidelines is not None
+        assert len(role.guidelines) > 0
         assert role.agents_md is True
         assert role.skills.enabled is False
         assert role.verification.enabled is True
@@ -224,6 +226,27 @@ class TestToolFiltering:
         """tools=None means all tools available."""
         role = RoleConfig(name="all", description="all tools")
         assert role.tools is None
+
+
+class TestGuidelines:
+    """Test guidelines field on roles."""
+
+    def test_no_guidelines_by_default(self):
+        role = RoleConfig(name="test", description="test")
+        assert role.guidelines is None
+
+    def test_guidelines_from_yaml(self):
+        mgr = RoleManager()
+        role = mgr.get_role("coder")
+        assert role is not None
+        assert role.guidelines is not None
+        assert any("concise" in g.lower() for g in role.guidelines)
+
+    def test_general_no_guidelines(self):
+        mgr = RoleManager()
+        role = mgr.get_role("general")
+        assert role is not None
+        assert role.guidelines is None
 
 
 class TestMemoryOverrides:

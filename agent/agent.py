@@ -197,8 +197,16 @@ When to use each approach:
             Composed system prompt string.
         """
         if self.role and self.role.system_prompt:
-            # Role-specific: start with role's custom prompt + workflow
-            sections = [self.role.system_prompt, self.PROMPT_WORKFLOW]
+            # Role-specific: start with role's custom prompt
+            sections = [self.role.system_prompt]
+
+            # Append role-specific guidelines
+            if self.role.guidelines:
+                bullets = "\n".join(f"- {g}" for g in self.role.guidelines)
+                sections.append(f"<guidelines>\n{bullets}\n</guidelines>")
+
+            # Core workflow (ReAct pattern)
+            sections.append(self.PROMPT_WORKFLOW)
 
             # Conditionally include infrastructure sections
             if self.role.agents_md:

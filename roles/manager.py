@@ -115,6 +115,7 @@ class RoleManager:
             description=description,
             system_prompt=data.get("system_prompt"),
             tools=data.get("tools"),
+            guidelines=data.get("guidelines"),
             agents_md=data.get("agents_md", True),
             memory=memory,
             skills=skills,

@@ -17,6 +17,15 @@ tools:
   - grep_content
   - manage_todo_list
 
+guidelines:
+  - Use shell for file operations like ls, grep, find
+  - Use read_file to examine files before editing
+  - Use smart_edit for precise changes (old text must match exactly)
+  - Use write_file only for new files or complete rewrites
+  - When summarizing your actions, output plain text directly — do NOT use shell to display what you did
+  - Be concise in your responses
+  - Show file paths clearly when working with files
+
 agents_md: true
 
 skills:
