@@ -208,8 +208,7 @@ When to use each approach:
             if "manage_todo_list" in self.tool_executor.tools:
                 sections.append(self.PROMPT_TASK_MANAGEMENT)
 
-            # Always include general guidelines
-            sections.append(self.PROMPT_TOOL_GUIDELINES)
+            # Always include workflow (ReAct pattern)
             sections.append(self.PROMPT_WORKFLOW)
 
             # Include complex task strategy when explore/parallel tools are available
