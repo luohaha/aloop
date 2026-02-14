@@ -51,6 +51,9 @@ Start without `--task` to enter interactive mode:
 
 ```bash
 ouro
+
+# Experimental PTK2 single-renderer mode
+OURO_TUI=ptk2 ouro
 ```
 
 Type your request and press Enter twice to submit. The agent will think, use tools, and respond.
