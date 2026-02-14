@@ -253,7 +253,7 @@ When to use each approach:
 
         return system_content
 
-    async def run(self, task: str, verify: bool = True) -> str:
+    async def run(self, task: str, verify: bool = False) -> str:
         """Execute ReAct loop until task is complete.
 
         Args:
