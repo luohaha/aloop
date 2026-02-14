@@ -43,7 +43,7 @@ fi
 # ── Run ──────────────────────────────────────────────────────────────────────
 VERSION_FLAG=()
 if [ -n "$AGENT_VERSION" ]; then
-    VERSION_FLAG=(--agent-version "$AGENT_VERSION")
+    VERSION_FLAG=(--agent-kwarg "version=$AGENT_VERSION")
 fi
 
 harbor run \
