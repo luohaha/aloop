@@ -29,6 +29,7 @@ OURO_TUI=ptk ouro
 - [x] Cache prompt styling per theme to avoid rebuilding styles each prompt.
 - [x] Avoid rebuilding default command help map on every completion.
 - [x] Cache status bar rendering to avoid rebuilding the same Rich panel repeatedly.
+- [x] Reduce redundant status bar printing in PTK mode (dedupe identical renders).
 - [ ] (Optional) Investigate status bar output frequency; reduce redundant re-renders without removing status information.
 - [ ] (Optional) Add a debug flag to log prompt_toolkit key parsing timings.
 

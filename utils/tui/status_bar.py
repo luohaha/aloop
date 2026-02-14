@@ -29,7 +29,7 @@ class StatusBarState:
 class StatusBar:
     """Persistent status bar displayed at the bottom of the terminal."""
 
-    def __init__(self, console: Console):
+    def __init__(self, console: Console, *, dedupe_prints: bool = False):
         """Initialize status bar.
 
         Args:
@@ -38,6 +38,9 @@ class StatusBar:
         self.console = console
         self.state = StatusBarState()
         self._live: Optional[Live] = None
+
+        self._dedupe_prints = dedupe_prints
+        self._last_shown_key: tuple[object, ...] | None = None
 
         # Cache last render output; status bar rendering can be called repeatedly
         # (e.g. with Live updates).
@@ -177,7 +180,12 @@ class StatusBar:
 
     def show(self) -> None:
         """Display the status bar (non-live version)."""
-        self.console.print(self._render())
+        panel = self._render()
+        key = self._render_cache_key
+        if self._dedupe_prints and key is not None and key == self._last_shown_key:
+            return
+        self.console.print(panel)
+        self._last_shown_key = key
 
     def start_live(self) -> Live:
         """Start live updating status bar.

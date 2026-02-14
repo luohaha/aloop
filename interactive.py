@@ -1,6 +1,7 @@
 """Interactive multi-turn conversation mode for the agent."""
 
 import asyncio
+import os
 import shlex
 import signal
 
@@ -85,7 +86,10 @@ class InteractiveSession:
         )
 
         # Initialize status bar
-        self.status_bar = StatusBar(terminal_ui.console)
+        self.status_bar = StatusBar(
+            terminal_ui.console,
+            dedupe_prints=os.environ.get("OURO_TUI") == "ptk",
+        )
         self.status_bar.update(mode="LOOP")
         self.skills_registry = SkillsRegistry()
 
