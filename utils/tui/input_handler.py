@@ -189,6 +189,11 @@ class InputHandler:
     _suggest_cache_text: str | None
     _suggest_cache_results: list[tuple[str, str]]
 
+    _toolbar_cache_text: str | None
+    _toolbar_cache: list[tuple[str, str]] | str
+
+    _hide_toolbar_when_menu_visible: bool
+
     _last_completion_sync_text: str | None
 
     _style_cache_theme: str | None
@@ -215,6 +220,12 @@ class InputHandler:
 
         self._suggest_cache_text = None
         self._suggest_cache_results = []
+
+        self._toolbar_cache_text = None
+        self._toolbar_cache = ""
+
+        self._hide_toolbar_when_menu_visible = os.environ.get("OURO_TUI") == "ptk"
+
         self._last_completion_sync_text = None
 
         self._style_cache_theme = None
@@ -246,20 +257,7 @@ class InputHandler:
         self._on_show_stats: Optional[Callable[[], None]] = None
 
         def bottom_toolbar():
-            text = self.session.default_buffer.text
-            suggestions = self._get_command_suggestions(text)
-            if not suggestions:
-                return ""
-
-            fragments: list[tuple[str, str]] = []
-            fragments.append(("class:toolbar.hint", "Commands: "))
-            for i, (display, help_text) in enumerate(suggestions[:6]):
-                if i:
-                    fragments.append(("class:toolbar.hint", "  "))
-                fragments.append(("class:toolbar.cmd", display))
-                if help_text:
-                    fragments.append(("class:toolbar.hint", f" — {help_text}"))
-            return fragments
+            return self._bottom_toolbar()
 
         # Create prompt session with auto-complete while typing.
         # The completer itself is responsible for returning results only for slash commands.
@@ -367,6 +365,47 @@ class InputHandler:
         self._suggest_cache_text = text
         self._suggest_cache_results = results
         return results
+
+    def _bottom_toolbar_for(self, text: str, *, menu_visible: bool) -> list[tuple[str, str]] | str:
+        """Pure bottom-toolbar renderer.
+
+        Args:
+            text: Current buffer text.
+            menu_visible: Whether the completion menu is visible.
+        """
+        if self._hide_toolbar_when_menu_visible and menu_visible:
+            return ""
+
+        if text == self._toolbar_cache_text:
+            return self._toolbar_cache
+
+        suggestions = self._get_command_suggestions(text)
+        if not suggestions:
+            self._toolbar_cache_text = text
+            self._toolbar_cache = ""
+            return ""
+
+        fragments: list[tuple[str, str]] = [("class:toolbar.hint", "Commands: ")]
+        for i, (display, help_text) in enumerate(suggestions[:6]):
+            if i:
+                fragments.append(("class:toolbar.hint", "  "))
+            fragments.append(("class:toolbar.cmd", display))
+            if help_text:
+                fragments.append(("class:toolbar.hint", f" — {help_text}"))
+
+        self._toolbar_cache_text = text
+        self._toolbar_cache = fragments
+        return fragments
+
+    def _bottom_toolbar(self):
+        """Render bottom toolbar fragments.
+
+        This is called frequently during prompt_toolkit rendering, so we keep it
+        lightweight and cached.
+        """
+        buf = self.session.default_buffer
+        menu_visible = buf.complete_state is not None
+        return self._bottom_toolbar_for(buf.text, menu_visible=menu_visible)
 
     def _create_key_bindings(self) -> KeyBindings:
         """Create custom key bindings.

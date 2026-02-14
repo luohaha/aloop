@@ -58,6 +58,13 @@ def test_input_handler_style_is_cached_per_theme() -> None:
     assert a is b
 
 
+def test_input_handler_toolbar_hides_when_completion_menu_visible(monkeypatch) -> None:
+    monkeypatch.setenv("OURO_TUI", "ptk")
+    handler = InputHandler(history_file=None, commands=["help", "reset"])
+
+    assert handler._bottom_toolbar_for("/", menu_visible=True) == ""
+
+
 def test_input_handler_slash_key_triggers_completion_binding() -> None:
     handler = InputHandler(history_file=None, commands=["help", "reset"])
     slash_bindings = [b for b in handler.key_bindings.bindings if any(k == "/" for k in b.keys)]

@@ -31,6 +31,7 @@ OURO_TUI=ptk ouro
 - [x] Cache status bar rendering to avoid rebuilding the same Rich panel repeatedly.
 - [x] Reduce redundant status bar printing in PTK mode (dedupe identical renders).
 - [ ] (Optional) Investigate status bar output frequency; reduce redundant re-renders without removing status information.
+- [x] Cache bottom toolbar rendering and hide it when the completion menu is visible (PTK mode).
 - [ ] (Optional) Add a debug flag to log prompt_toolkit key parsing timings.
 
 ## Acceptance checklist
