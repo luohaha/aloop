@@ -1,5 +1,3 @@
-import os
-
 from utils.tui.input_handler import InputHandler
 
 
