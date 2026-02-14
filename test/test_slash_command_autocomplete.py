@@ -51,6 +51,13 @@ def test_input_handler_completes_while_typing() -> None:
     assert handler.session.complete_while_typing is True
 
 
+def test_input_handler_style_is_cached_per_theme() -> None:
+    handler = InputHandler(history_file=None, commands=["help", "reset"])
+    a = handler.get_style()
+    b = handler.get_style()
+    assert a is b
+
+
 def test_input_handler_slash_key_triggers_completion_binding() -> None:
     handler = InputHandler(history_file=None, commands=["help", "reset"])
     slash_bindings = [b for b in handler.key_bindings.bindings if any(k == "/" for k in b.keys)]

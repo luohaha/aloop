@@ -24,6 +24,7 @@ OURO_TUI=ptk ouro
 - [x] Reduce repeated completion/suggestion computations (simple caching).
 - [x] Remove redundant completion refresh triggers (avoid triple `start_completion()` on `/`).
 - [ ] (Optional) Evaluate disabling Codex-style forced `start_completion()` refresh in PTK mode (requires manual acceptance testing on multiple terminals).
+- [x] Cache prompt styling per theme to avoid rebuilding styles each prompt.
 - [ ] (Optional) Investigate status bar output frequency; reduce redundant re-renders without removing status information.
 - [ ] (Optional) Add a debug flag to log prompt_toolkit key parsing timings.
 

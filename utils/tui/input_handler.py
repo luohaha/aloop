@@ -190,6 +190,9 @@ class InputHandler:
 
     _last_completion_sync_text: str | None
 
+    _style_cache_theme: str | None
+    _style_cache: Style | None
+
     def __init__(
         self,
         history_file: Optional[str] = None,
@@ -210,6 +213,9 @@ class InputHandler:
         self._suggest_cache_text = None
         self._suggest_cache_results = []
         self._last_completion_sync_text = None
+
+        self._style_cache_theme = None
+        self._style_cache = None
 
         display_texts: dict[str, str] | None = None
         if command_registry is not None:
@@ -394,8 +400,12 @@ class InputHandler:
         Returns:
             Style instance
         """
+        theme_name = Theme.get_theme_name()
+        if self._style_cache is not None and self._style_cache_theme == theme_name:
+            return self._style_cache
+
         colors = Theme.get_colors()
-        return Style.from_dict(
+        style = Style.from_dict(
             {
                 "prompt": f"{colors.user_input} bold",
                 "": colors.text_primary,
@@ -410,6 +420,9 @@ class InputHandler:
                 "scrollbar.button": colors.text_muted,
             }
         )
+        self._style_cache_theme = theme_name
+        self._style_cache = style
+        return style
 
     async def prompt_async(self, prompt_text: str = "> ") -> str:
         """Get input from user asynchronously.
