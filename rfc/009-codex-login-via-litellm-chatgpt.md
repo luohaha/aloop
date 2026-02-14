@@ -36,7 +36,7 @@ Add `llm/chatgpt_auth.py` to:
 - set/normalize `CHATGPT_TOKEN_DIR` to `~/.ouro/auth/chatgpt`
 - trigger login via LiteLLM ChatGPT authenticator
 - remove local auth file for logout
-- inspect auth status (present/expired/account id)
+- expose provider-level auth status for provider picker filtering
 
 ### 3. Add CLI and interactive auth commands
 
@@ -47,9 +47,15 @@ CLI:
 Interactive:
 - `/login` (open provider selector)
 - `/logout` (open provider selector)
-- `/auth`
 
-### 4. Allow chatgpt models without API keys
+### 4. Sync OAuth models into `/model`
+
+After successful login, ouro auto-inserts a managed set of `chatgpt/*` models into
+`~/.ouro/models.yaml` so they appear in `/model` immediately.
+
+On logout, only OAuth-managed entries inserted by this flow are removed.
+
+### 5. Allow chatgpt models without API keys
 
 Update `ModelManager.validate_model()` so provider `chatgpt` does not require `api_key` in `models.yaml`.
 
@@ -100,6 +106,7 @@ Mitigations:
 ## Success Criteria
 
 - Users can run `chatgpt/*` models in ouro without API key fields.
-- `--login`, `--logout`, `/login`, `/logout`, `/auth` function end-to-end.
+- `--login`, `--logout`, `/login`, `/logout` function end-to-end with provider picker UX.
+- Login inserts managed `chatgpt/*` entries visible in `/model`; logout removes managed entries.
 - Existing token/cost tracking remains available via existing LiteLLM usage path.
 - Documentation clearly explains setup and commands.

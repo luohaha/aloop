@@ -50,8 +50,8 @@ For `chatgpt/*` models, login with OAuth before first use:
 
 - CLI: `ouro --login` (then pick provider)
 - Interactive: `/login` (then pick provider)
-- Check status: `/auth`
 - Logout: `ouro --logout` or `/logout`
+- After login, use `/model` to pick one of the added `chatgpt/*` models.
 
 Credentials are stored under `~/.ouro/auth/chatgpt/`.
 

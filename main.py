@@ -19,6 +19,7 @@ from llm.chatgpt_auth import (
     login_auth_provider,
     logout_auth_provider,
 )
+from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
 from memory import MemoryManager
 from tools.advanced_file_ops import GlobTool, GrepTool
 from tools.explore import ExploreTool
@@ -235,10 +236,18 @@ def main():
             terminal_ui.print_error(str(e), title="Login Error")
             return
 
+        model_manager = ModelManager()
+        added = sync_oauth_models(model_manager, provider)
+
         terminal_ui.print_success(f"{provider} login completed.")
         terminal_ui.console.print(f"Auth file: {status.auth_file}")
         if status.account_id:
             terminal_ui.console.print(f"Account ID: {status.account_id}")
+        if added:
+            terminal_ui.console.print(
+                f"Added {len(added)} {provider} models to `.ouro/models.yaml`."
+            )
+        terminal_ui.console.print("Use /model (interactive) to pick the active model.")
         return
 
     if args.logout:
@@ -252,10 +261,18 @@ def main():
             terminal_ui.print_error(str(e), title="Logout Error")
             return
 
+        model_manager = ModelManager()
+        removed_models = remove_oauth_models(model_manager, provider)
+
         if removed:
             terminal_ui.print_success(f"Logged out from {provider}.")
         else:
             terminal_ui.print_info(f"No {provider} login state found.")
+
+        if removed_models:
+            terminal_ui.console.print(
+                f"Removed {len(removed_models)} managed {provider} models from `.ouro/models.yaml`."
+            )
         return
 
     # Validate config

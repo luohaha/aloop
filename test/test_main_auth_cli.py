@@ -68,6 +68,13 @@ def test_main_login_success(monkeypatch):
     calls, console = _setup_common(monkeypatch, ["--login"])
     state = {"called": 0}
 
+    monkeypatch.setattr(ouro_main, "ModelManager", lambda: object())
+    monkeypatch.setattr(
+        ouro_main,
+        "sync_oauth_models",
+        lambda model_manager, provider: ["chatgpt/gpt-5.2-codex"],
+    )
+
     async def fake_pick(mode: str):
         assert mode == "login"
         return "chatgpt"
@@ -112,6 +119,13 @@ def test_main_login_failure(monkeypatch):
 def test_main_logout_success(monkeypatch):
     calls, _ = _setup_common(monkeypatch, ["--logout"])
 
+    monkeypatch.setattr(ouro_main, "ModelManager", lambda: object())
+    monkeypatch.setattr(
+        ouro_main,
+        "remove_oauth_models",
+        lambda model_manager, provider: ["chatgpt/gpt-5.2-codex"],
+    )
+
     async def fake_pick(mode: str):
         assert mode == "logout"
         return "chatgpt"
@@ -130,6 +144,13 @@ def test_main_logout_success(monkeypatch):
 
 def test_main_logout_when_no_state(monkeypatch):
     calls, _ = _setup_common(monkeypatch, ["--logout"])
+
+    monkeypatch.setattr(ouro_main, "ModelManager", lambda: object())
+    monkeypatch.setattr(
+        ouro_main,
+        "remove_oauth_models",
+        lambda model_manager, provider: [],
+    )
 
     async def fake_pick(mode: str):
         assert mode == "logout"

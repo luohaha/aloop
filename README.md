@@ -98,7 +98,6 @@ ouro --resume a1b2c3d4
 | `/model edit` | Open `~/.ouro/models.yaml` in editor (auto-reload on save) |
 | `/login` | Open OAuth provider selector and login |
 | `/logout` | Open OAuth provider selector and logout |
-| `/auth` | Show OAuth auth status |
 | `/theme` | Toggle dark/light theme |
 | `/verbose` | Toggle thinking display |
 | `/compact` | Trigger memory compression and show token savings |

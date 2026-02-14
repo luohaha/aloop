@@ -61,7 +61,6 @@ Type your request and press Enter twice to submit. The agent will think, use too
 /model edit              Edit ~/.ouro/models.yaml in your editor
 /login                   Login to OAuth provider (menu)
 /logout                  Logout from OAuth provider (menu)
-/auth                    Show OAuth auth status
 /theme                   Toggle dark/light theme
 /verbose                 Toggle thinking display
 /compact                 Toggle compact output

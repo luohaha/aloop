@@ -1,7 +1,6 @@
 """Interactive multi-turn conversation mode for the agent."""
 
 import asyncio
-import datetime
 import shlex
 import signal
 
@@ -17,6 +16,7 @@ from llm.chatgpt_auth import (
     login_auth_provider,
     logout_auth_provider,
 )
+from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
 from memory import MemoryManager
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_history_file
@@ -80,7 +80,6 @@ class InteractiveSession:
                 ),
                 CommandSpec("login", "Login to OAuth provider"),
                 CommandSpec("logout", "Logout from OAuth provider"),
-                CommandSpec("auth", "Show OAuth auth status"),
                 CommandSpec("exit", "Exit interactive mode"),
             ]
         )
@@ -378,9 +377,6 @@ class InteractiveSession:
         elif command == "/logout":
             await self._handle_logout_command(command_parts)
 
-        elif command == "/auth":
-            await self._handle_auth_status_command(command_parts)
-
         elif command == "/skills":
             await self._handle_skills_menu()
 
@@ -639,10 +635,17 @@ class InteractiveSession:
             terminal_ui.print_error(str(e), title="Login Error")
             return
 
+        added = sync_oauth_models(self.model_manager, provider)
+
         terminal_ui.print_success(f"{provider} login completed.")
         terminal_ui.console.print(f"Auth file: {status.auth_file}")
         if status.account_id:
             terminal_ui.console.print(f"Account ID: {status.account_id}")
+        if added:
+            terminal_ui.console.print(
+                f"Added {len(added)} {provider} models to `.ouro/models.yaml`."
+            )
+        terminal_ui.print_info("Run /model to pick the active model.")
 
     async def _handle_logout_command(self, command_parts: list[str]) -> None:
         if len(command_parts) != 1:
@@ -659,53 +662,22 @@ class InteractiveSession:
             terminal_ui.print_error(str(e), title="Logout Error")
             return
 
+        removed_models = remove_oauth_models(self.model_manager, provider)
+
         if removed:
             terminal_ui.print_success(f"Logged out from {provider}.")
         else:
             terminal_ui.print_info(f"No {provider} login state found.")
 
-    async def _handle_auth_status_command(self, command_parts: list[str]) -> None:
-        if len(command_parts) != 1:
-            terminal_ui.print_error("Usage: /auth")
-            return
-
-        try:
-            statuses = await get_all_auth_provider_statuses()
-        except Exception as e:
-            terminal_ui.print_error(str(e), title="Auth Status Error")
-            return
-
-        colors = Theme.get_colors()
-        terminal_ui.console.print(
-            f"\n[bold {colors.primary}]OAuth Auth Status[/bold {colors.primary}]\n"
-        )
-
-        for provider in get_supported_auth_providers():
-            status = statuses.get(provider)
-            if status is None:
-                continue
-
-            terminal_ui.console.print(f"Provider: {status.provider}")
-            terminal_ui.console.print(f"Auth file: {status.auth_file}")
-
-            if not status.exists:
-                terminal_ui.console.print("State: not logged in\n")
-                continue
-
+        if removed_models:
             terminal_ui.console.print(
-                "State: logged in" if is_auth_status_logged_in(status) else "State: invalid"
+                f"Removed {len(removed_models)} managed {provider} models from `.ouro/models.yaml`."
             )
-            if status.account_id:
-                terminal_ui.console.print(f"Account ID: {status.account_id}")
 
-            if status.expires_at is not None:
-                dt = datetime.datetime.fromtimestamp(status.expires_at).isoformat(
-                    sep=" ", timespec="seconds"
-                )
-                terminal_ui.console.print(f"Expires at: {dt}")
-                if status.expired is not None:
-                    terminal_ui.console.print("Expired: yes" if status.expired else "Expired: no")
-            terminal_ui.console.print()
+        current_after = self.model_manager.get_current_model()
+        if current_after:
+            self.agent.switch_model(current_after.model_id)
+            self._update_status_bar()
 
     async def run(self) -> None:
         """Run the interactive session loop."""
