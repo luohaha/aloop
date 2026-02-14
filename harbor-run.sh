@@ -17,6 +17,9 @@ MODEL="anthropic/kimi-k2-5-latest"
 # Dataset to evaluate
 DATASET="terminal-bench-sample@2.0"
 
+# ouro version to install in container (empty = latest from PyPI)
+AGENT_VERSION="0.2.3"
+
 # Timeout multiplier (default setup=360s, so 2.0 → 720s). Increase for slow networks.
 TIMEOUT_MULTIPLIER=2.0
 
@@ -38,9 +41,15 @@ if [ -z "$OURO_API_KEY" ]; then
 fi
 
 # ── Run ──────────────────────────────────────────────────────────────────────
+VERSION_FLAG=()
+if [ -n "$AGENT_VERSION" ]; then
+    VERSION_FLAG=(--agent-version "$AGENT_VERSION")
+fi
+
 harbor run \
     --agent-import-path ouro_harbor.ouro_agent:OuroAgent \
     --model "$MODEL" \
     --timeout-multiplier "$TIMEOUT_MULTIPLIER" \
     --dataset "$DATASET" \
+    "${VERSION_FLAG[@]}" \
     "$@"
