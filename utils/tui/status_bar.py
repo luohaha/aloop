@@ -39,6 +39,11 @@ class StatusBar:
         self.state = StatusBarState()
         self._live: Optional[Live] = None
 
+        # Cache last render output; status bar rendering can be called repeatedly
+        # (e.g. with Live updates).
+        self._render_cache_key: tuple[object, ...] | None = None
+        self._render_cache_panel: Panel | None = None
+
     def _format_tokens(self, count: int) -> str:
         """Format token count for display.
 
@@ -61,6 +66,20 @@ class StatusBar:
         Returns:
             Rich Panel with status bar content
         """
+        cache_key = (
+            Theme.get_theme_name(),
+            self.state.mode,
+            self.state.input_tokens,
+            self.state.output_tokens,
+            self.state.context_tokens,
+            self.state.cost,
+            self.state.is_processing,
+            self.state.status_message,
+            self.state.model_name,
+        )
+        if cache_key == self._render_cache_key and self._render_cache_panel is not None:
+            return self._render_cache_panel
+
         colors = Theme.get_colors()
 
         # Build status items
@@ -102,12 +121,15 @@ class StatusBar:
         # Join with separator
         content = " │ ".join(items)
 
-        return Panel(
+        panel = Panel(
             Text.from_markup(content),
             box=box.DOUBLE,
             border_style=colors.text_muted,
             padding=(0, 1),
         )
+        self._render_cache_key = cache_key
+        self._render_cache_panel = panel
+        return panel
 
     def update(
         self,
