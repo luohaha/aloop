@@ -21,6 +21,7 @@ OURO_TUI=ptk ouro
 - [x] Wrap interactive mode in `prompt_toolkit.patch_stdout()` to prevent prompt corruption.
 - [x] Patch stdout for the model setup session in PTK mode (same benefits, no behavior change).
 - [x] Tune `ttimeoutlen/timeoutlen` in PTK mode for snappier ESC.
+- [x] Tune prompt_toolkit redraw throttling in PTK mode to reduce flicker under heavy output.
 - [x] Add unit tests verifying PTK mode timeout tuning.
 - [x] Reduce repeated completion/suggestion computations (simple caching).
 - [x] Remove redundant completion refresh triggers (avoid triple `start_completion()` on `/`).

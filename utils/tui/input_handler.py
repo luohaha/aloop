@@ -276,8 +276,16 @@ class InputHandler:
         # In PTK-tuned mode, reduce the default escape-sequence timeouts.
         # prompt_toolkit defaults (0.5s / 1.0s) can feel sluggish for command UIs.
         if os.environ.get("OURO_TUI") == "ptk":
-            self.session.app.ttimeoutlen = 0.05
-            self.session.app.timeoutlen = 0.2
+            app = self.session.app
+            app.ttimeoutlen = 0.05
+            app.timeoutlen = 0.2
+
+            # Throttle redraws a bit to reduce flicker and CPU when lots of output is
+            # happening (while still feeling instant for typing).
+            if hasattr(app, "min_redraw_interval"):
+                app.min_redraw_interval = 0.02
+            if hasattr(app, "max_render_postpone_time"):
+                app.max_render_postpone_time = 0.02
 
         def _on_text_insert(_buffer) -> None:
             # Show/update slash completions on insertions.
