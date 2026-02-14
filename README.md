@@ -58,6 +58,9 @@ See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full lis
 # Interactive mode
 ouro
 
+# Experimental prompt_toolkit-tuned interactive mode (smoother output/input)
+OURO_TUI=ptk ouro
+
 # Single task (returns raw result)
 ouro --task "Calculate 123 * 456"
 

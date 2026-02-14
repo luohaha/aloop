@@ -1,5 +1,6 @@
 """Enhanced input handling with auto-completion and keyboard shortcuts."""
 
+import os
 from typing import Callable, List, Optional
 
 from prompt_toolkit import PromptSession
@@ -223,6 +224,12 @@ class InputHandler:
             enable_history_search=True,
             bottom_toolbar=bottom_toolbar,
         )
+
+        # In PTK-tuned mode, reduce the default escape-sequence timeouts.
+        # prompt_toolkit defaults (0.5s / 1.0s) can feel sluggish for command UIs.
+        if os.environ.get("OURO_TUI") == "ptk":
+            self.session.app.ttimeoutlen = 0.05
+            self.session.app.timeoutlen = 0.2
 
         def _on_text_insert(_buffer) -> None:
             # Best-effort: show completion menu right after typing "/" at the beginning.

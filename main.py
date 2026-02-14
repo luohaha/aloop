@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import importlib.metadata
+import os
 import warnings
 
 from rich.console import Console
@@ -218,7 +219,12 @@ def main():
 
         # If no task provided, enter interactive mode (default behavior)
         if not args.task:
-            await run_interactive_mode(agent)
+            if os.environ.get("OURO_TUI") == "ptk":
+                from interactive_ptk import run_interactive_mode_ptk
+
+                await run_interactive_mode_ptk(agent)
+            else:
+                await run_interactive_mode(agent)
             return
 
         # Single-turn mode: execute one task and exit
