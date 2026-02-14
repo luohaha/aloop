@@ -69,6 +69,9 @@ ouro
 # Single task (returns raw result)
 ouro --task "Calculate 123 * 456"
 
+# Single task with verification (Ralph Loop)
+ouro --task "Calculate 123 * 456" --verify
+
 # Resume last session
 ouro --resume
 
@@ -81,6 +84,7 @@ ouro --resume a1b2c3d4
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--task TEXT` | `-t` | Run a single task and exit |
+| `--verify` | | Enable Ralph Loop verification (use with `--task`) |
 | `--model ID` | `-m` | LiteLLM model ID to use |
 | `--resume [ID]` | `-r` | Resume a session (`latest` if no ID given) |
 | `--login` | - | Open OAuth provider selector and login |
@@ -120,7 +124,7 @@ ouro --resume a1b2c3d4
 ## Features
 
 - **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop, chosen autonomously by the agent
-- **Self-verification**: An outer loop verifies the agent's answer against the original task and re-enters if incomplete
+- **Self-verification**: Opt-in outer loop (`--verify`) that verifies the agent's answer against the original task and re-enters if incomplete
 - **Memory compression**: LLM-driven summarization when context exceeds a token threshold, with multiple strategies (`sliding_window`, `selective`, `deletion`)
 - **Git-aware memory**: Git-based memory system that persists and manages agent memory through version control
 - **Session persistence**: Conversations saved as human-readable YAML files under `~/.ouro/sessions/`, resumable via `--resume` or `/resume`
