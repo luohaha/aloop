@@ -193,6 +193,8 @@ class InputHandler:
     _style_cache_theme: str | None
     _style_cache: Style | None
 
+    _prev_buffer_text: str
+
     def __init__(
         self,
         history_file: Optional[str] = None,
@@ -216,6 +218,8 @@ class InputHandler:
 
         self._style_cache_theme = None
         self._style_cache = None
+
+        self._prev_buffer_text = ""
 
         display_texts: dict[str, str] | None = None
         if command_registry is not None:
@@ -274,16 +278,28 @@ class InputHandler:
             self.session.app.timeoutlen = 0.2
 
         def _on_text_changed(_buffer) -> None:
-            # Codex-style: when the input starts with "/", keep the completion menu in sync
-            # with every keystroke.
+            # When the input starts with "/", keep completions in sync.
             #
-            # We also guard against duplicate calls: prompt_toolkit can trigger multiple
-            # callbacks per key press, and each `start_completion()` schedules async work.
+            # prompt_toolkit already triggers completion automatically on *insertions*
+            # when `complete_while_typing=True` (via `on_text_insert`). However, deletions
+            # (e.g. backspace) do not trigger completion by default, so we explicitly
+            # refresh in those cases.
+            #
+            # We also guard against duplicate calls: each `start_completion()` schedules
+            # async work.
             buf = self.session.default_buffer
-            if buf.text.startswith("/"):
-                if buf.text == self._last_completion_sync_text:
+            new_text = buf.text
+            prev_text = self._prev_buffer_text
+            self._prev_buffer_text = new_text
+
+            if new_text.startswith("/"):
+                is_insertion = len(new_text) > len(prev_text)
+                if is_insertion:
                     return
-                self._last_completion_sync_text = buf.text
+
+                if new_text == self._last_completion_sync_text:
+                    return
+                self._last_completion_sync_text = new_text
                 buf.start_completion(
                     select_first=False,
                     complete_event=CompleteEvent(text_inserted=True),
