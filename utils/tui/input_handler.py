@@ -3,9 +3,12 @@
 from typing import Callable, List, Optional
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.buffer import CompletionState
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
+from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style
 
@@ -46,7 +49,7 @@ def _normalize_command_tree(
 
 
 class CommandCompleter(Completer):
-    """Auto-completer for slash commands and file paths."""
+    """Auto-completer for slash commands."""
 
     def __init__(
         self,
@@ -109,7 +112,11 @@ class CommandCompleter(Completer):
             display_texts=self.display_texts,
         )
 
-    def get_completions(self, document, complete_event):
+    def get_completions(
+        self,
+        document: Document,
+        complete_event: CompleteEvent | None,
+    ):
         """Get completions for the current input.
 
         Args:
@@ -127,7 +134,11 @@ class CommandCompleter(Completer):
         """Return ordered slash suggestions for UI rendering and enter resolution."""
         return self.engine.suggest(text_before_cursor)
 
-    def get_enter_completion(self, document, complete_state) -> Completion | None:
+    def get_enter_completion(
+        self,
+        document: Document,
+        complete_state: CompletionState | None,
+    ) -> Completion | None:
         """Resolve completion to apply when Enter is pressed in slash context."""
         suggestions = self.get_suggestions(document.text_before_cursor)
         if not suggestions:
@@ -190,7 +201,7 @@ class InputHandler:
         self._on_toggle_thinking: Optional[Callable[[], None]] = None
         self._on_show_stats: Optional[Callable[[], None]] = None
 
-        def bottom_toolbar():
+        def bottom_toolbar() -> str | list[tuple[str, str]]:
             text = self.session.default_buffer.text
             suggestions = self._get_command_suggestions(text)
             if not suggestions:
@@ -217,7 +228,7 @@ class InputHandler:
             bottom_toolbar=bottom_toolbar,
         )
 
-        def _on_text_insert(_buffer) -> None:
+        def _on_text_insert(_buffer: object) -> None:
             # Best-effort: show completion menu right after typing "/" at the beginning.
             buf = self.session.default_buffer
             if buf.text == "/" and buf.cursor_position == 1:
@@ -228,7 +239,7 @@ class InputHandler:
 
         self.session.default_buffer.on_text_insert += _on_text_insert
 
-        def _on_text_changed(_buffer) -> None:
+        def _on_text_changed(_buffer: object) -> None:
             # Codex-style: when the input starts with "/", keep the completion menu in sync
             # with every keystroke. (Some terminals don't refresh completion state reliably
             # unless we explicitly trigger it.)
@@ -258,7 +269,7 @@ class InputHandler:
         kb = KeyBindings()
 
         @kb.add("/", eager=True)
-        def slash_command(event):
+        def slash_command(event: KeyPressEvent) -> None:
             """Insert '/' and, when starting a command, show suggestions immediately."""
             buffer = event.current_buffer
             at_start = buffer.text == "" and buffer.cursor_position == 0
@@ -267,7 +278,7 @@ class InputHandler:
                 buffer.start_completion(select_first=False)
 
         @kb.add("enter", eager=True)
-        def accept_or_submit_slash(event):
+        def accept_or_submit_slash(event: KeyPressEvent) -> None:
             """Codex-style Enter: accept best slash completion, then submit."""
             buffer = event.current_buffer
             completion = self.completer.get_enter_completion(buffer.document, buffer.complete_state)
@@ -276,20 +287,20 @@ class InputHandler:
             buffer.validate_and_handle()
 
         @kb.add(Keys.ControlL)
-        def clear_screen(event):
+        def clear_screen(event: KeyPressEvent) -> None:
             """Clear the screen."""
             event.app.renderer.clear()
             if self._on_clear_screen:
                 self._on_clear_screen()
 
         @kb.add(Keys.ControlT)
-        def toggle_thinking(event):
+        def toggle_thinking(event: KeyPressEvent) -> None:
             """Toggle thinking display."""
             if self._on_toggle_thinking:
                 self._on_toggle_thinking()
 
         @kb.add(Keys.ControlS)
-        def show_stats(event):
+        def show_stats(event: KeyPressEvent) -> None:
             """Show quick stats."""
             if self._on_show_stats:
                 self._on_show_stats()

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from prompt_toolkit.document import Document
 
 from utils.tui.input_handler import CommandCompleter, InputHandler
@@ -45,6 +47,40 @@ def test_input_handler_slash_key_triggers_completion_binding() -> None:
     slash_bindings = [b for b in handler.key_bindings.bindings if any(k == "/" for k in b.keys)]
     assert len(slash_bindings) == 1
     assert slash_bindings[0].eager()
+
+
+def test_slash_binding_does_not_select_first_completion() -> None:
+    handler = InputHandler(history_file=None, commands=["help", "reset"])
+    slash_bindings = [b for b in handler.key_bindings.bindings if any(k == "/" for k in b.keys)]
+    binding = slash_bindings[0]
+
+    class DummyBuffer:
+        def __init__(self) -> None:
+            self.text = ""
+            self.cursor_position = 0
+            self.select_first_calls: list[bool] = []
+
+        def insert_text(self, text: str) -> None:
+            self.text += text
+            self.cursor_position += len(text)
+
+        def start_completion(self, *, select_first: bool) -> None:
+            self.select_first_calls.append(select_first)
+
+    buffer = DummyBuffer()
+    event = SimpleNamespace(current_buffer=buffer)
+
+    binding.handler(event)
+
+    assert buffer.text == "/"
+    assert buffer.select_first_calls == [False]
+
+
+def test_enter_completion_is_none_for_non_slash_input() -> None:
+    completer = CommandCompleter(commands=["help", "reset"])
+    doc = Document(text="hello", cursor_position=5)
+
+    assert completer.get_enter_completion(doc, None) is None
 
 
 def test_input_handler_command_suggestions() -> None:
