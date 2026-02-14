@@ -14,7 +14,7 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
-  chatgpt/gpt-5.2-codex:
+  chatgpt/gpt-5.3-codex:
     timeout: 600
 
   ollama/llama2:
@@ -52,8 +52,13 @@ For `chatgpt/*` models, login with OAuth before first use:
 - Interactive: `/login` (then pick provider)
 - Logout: `ouro --logout` or `/logout`
 - After login, use `/model` to pick one of the added `chatgpt/*` models.
+- The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list, including GPT-5.3 Codex variants).
+
+The device-login page is opened in browser on a best-effort basis when fresh authorization is likely needed. If your existing token/refresh state is still valid, login usually completes without a new browser step. If your environment blocks browser launch, open `https://auth.openai.com/codex/device` manually and enter the code shown in terminal.
 
 Credentials are stored under `~/.ouro/auth/chatgpt/`.
+
+Maintainer note: refresh the bundled OAuth model catalog with `python scripts/update_oauth_model_catalog.py`.
 
 ## Runtime Settings
 

@@ -27,6 +27,7 @@ def test_sync_oauth_models_adds_chatgpt_models(tmp_path):
 
     assert added
     assert "chatgpt/gpt-5.2-codex" in manager.models
+    assert "chatgpt/gpt-5.3-codex" in manager.models
     assert manager.models["chatgpt/gpt-5.2-codex"].extra.get("oauth_managed") is True
 
 
@@ -59,4 +60,31 @@ def test_remove_oauth_models_removes_only_managed_entries(tmp_path):
     # Unmanaged entry should remain
     assert "chatgpt/gpt-5.2" in manager.models
     # Default should be repaired
+    assert manager.default_model_id in manager.models
+
+
+def test_remove_oauth_models_removes_stale_managed_entries(tmp_path):
+    config_path = tmp_path / "models.yaml"
+    _write_models_yaml(
+        config_path,
+        "\n".join(
+            [
+                "models:",
+                "  chatgpt/legacy-codex:",
+                "    timeout: 600",
+                "    oauth_managed: true",
+                "    oauth_provider: chatgpt",
+                "  openai/gpt-4o:",
+                "    api_key: test",
+                "default: chatgpt/legacy-codex",
+                "",
+            ]
+        ),
+    )
+
+    manager = ModelManager(config_path=str(config_path))
+    removed = remove_oauth_models(manager, "chatgpt")
+
+    assert removed == ["chatgpt/legacy-codex"]
+    assert "chatgpt/legacy-codex" not in manager.models
     assert manager.default_model_id in manager.models

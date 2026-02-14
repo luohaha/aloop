@@ -7,19 +7,11 @@ flows to expose provider models in `/model`.
 from __future__ import annotations
 
 from llm.model_manager import ModelManager, ModelProfile
-
-CHATGPT_OAUTH_MODEL_IDS: tuple[str, ...] = (
-    "chatgpt/gpt-5.2-codex",
-    "chatgpt/gpt-5.2",
-    "chatgpt/gpt-5.1-codex-max",
-    "chatgpt/gpt-5.1-codex-mini",
-)
+from llm.oauth_model_catalog import get_oauth_provider_model_ids
 
 
 def _get_provider_model_ids(provider: str) -> tuple[str, ...]:
-    if provider == "chatgpt":
-        return CHATGPT_OAUTH_MODEL_IDS
-    raise ValueError(f"Unsupported provider: {provider}")
+    return get_oauth_provider_model_ids(provider)
 
 
 def _is_managed_profile(profile: ModelProfile, provider: str) -> bool:
@@ -73,13 +65,13 @@ def remove_oauth_models(model_manager: ModelManager, provider: str) -> list[str]
     Returns:
         List of removed model IDs.
     """
-    model_ids = set(_get_provider_model_ids(provider))
+    # Validate provider.
+    _get_provider_model_ids(provider)
+
     removed: list[str] = []
     changed = False
 
     for model_id, profile in list(model_manager.models.items()):
-        if model_id not in model_ids:
-            continue
         if not _is_managed_profile(profile, provider):
             continue
 

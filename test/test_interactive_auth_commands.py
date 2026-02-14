@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import interactive
@@ -15,7 +16,10 @@ class _DummyConsole:
 
 class _FakeAgent:
     def __init__(self):
-        self.model_manager = object()
+        self.model_manager = SimpleNamespace(
+            config_path="/tmp/models.yaml",
+            get_current_model=lambda: None,
+        )
         self.memory = SimpleNamespace(get_stats=lambda: {})
 
     def switch_model(self, model_id: str) -> bool:  # noqa: ARG002
@@ -110,6 +114,36 @@ async def test_handle_login_command_failure(monkeypatch):
     assert errors
     assert errors[0][0] == "Login Error"
     assert "login failed" in errors[0][1]
+
+
+async def test_handle_login_command_cancelled(monkeypatch):
+    session = _make_session(monkeypatch)
+    warnings = []
+    started = asyncio.Event()
+
+    async def fake_pick(mode: str):
+        assert mode == "login"
+        return "chatgpt"
+
+    async def fake_login(provider: str):
+        assert provider == "chatgpt"
+        started.set()
+        await asyncio.sleep(60)
+        return _status(exists=True, has_access_token=True)
+
+    monkeypatch.setattr(session, "_pick_auth_provider", fake_pick)
+    monkeypatch.setattr(interactive, "login_auth_provider", fake_login)
+    monkeypatch.setattr(interactive.terminal_ui, "print_warning", lambda msg: warnings.append(msg))
+
+    task = asyncio.create_task(session._handle_login_command(["/login"]))
+    await started.wait()
+
+    assert session.current_task is not None
+    session.current_task.cancel()
+    await task
+
+    assert warnings == ["Login cancelled."]
+    assert session.current_task is None
 
 
 async def test_handle_login_syncs_models(monkeypatch):

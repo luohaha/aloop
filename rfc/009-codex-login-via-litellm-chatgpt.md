@@ -34,6 +34,7 @@ Rationale: ChatGPT subscription provider support (`chatgpt/*`) appears in LiteLL
 
 Add `llm/chatgpt_auth.py` to:
 - set/normalize `CHATGPT_TOKEN_DIR` to `~/.ouro/auth/chatgpt`
+- open ChatGPT device-login page in browser on a best-effort basis when fresh auth is likely needed
 - trigger login via LiteLLM ChatGPT authenticator
 - remove local auth file for logout
 - expose provider-level auth status for provider picker filtering
@@ -53,7 +54,16 @@ Interactive:
 After successful login, ouro auto-inserts a managed set of `chatgpt/*` models into
 `~/.ouro/models.yaml` so they appear in `/model` immediately.
 
-On logout, only OAuth-managed entries inserted by this flow are removed.
+The model set is sourced from a bundled OAuth catalog (`llm/oauth_model_catalog.py`) synced
+from pi-ai's `openai-codex` model registry via:
+
+```bash
+python scripts/update_oauth_model_catalog.py
+```
+
+This keeps runtime offline (no live model discovery call) while avoiding ad-hoc hardcoding.
+
+On logout, OAuth-managed entries for that provider are removed.
 
 ### 5. Allow chatgpt models without API keys
 
@@ -63,10 +73,10 @@ Example model config:
 
 ```yaml
 models:
-  chatgpt/gpt-5.2-codex:
+  chatgpt/gpt-5.3-codex:
     timeout: 600
 
-default: chatgpt/gpt-5.2-codex
+default: chatgpt/gpt-5.3-codex
 ```
 
 ## Alternatives Considered
@@ -108,5 +118,6 @@ Mitigations:
 - Users can run `chatgpt/*` models in ouro without API key fields.
 - `--login`, `--logout`, `/login`, `/logout` function end-to-end with provider picker UX.
 - Login inserts managed `chatgpt/*` entries visible in `/model`; logout removes managed entries.
+- OAuth model catalog is generated from pi-ai `openai-codex` model list via a repeatable script.
 - Existing token/cost tracking remains available via existing LiteLLM usage path.
 - Documentation clearly explains setup and commands.

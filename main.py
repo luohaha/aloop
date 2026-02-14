@@ -229,9 +229,12 @@ def main():
         if not provider:
             return
 
-        terminal_ui.print_info(f"Starting {provider} login flow...")
+        terminal_ui.print_info(f"Starting {provider} login flow... (Ctrl+C to cancel)")
         try:
             status = asyncio.run(login_auth_provider(provider))
+        except KeyboardInterrupt:
+            terminal_ui.print_warning("Login cancelled by user.")
+            return
         except Exception as e:
             terminal_ui.print_error(str(e), title="Login Error")
             return
@@ -245,7 +248,7 @@ def main():
             terminal_ui.console.print(f"Account ID: {status.account_id}")
         if added:
             terminal_ui.console.print(
-                f"Added {len(added)} {provider} models to `.ouro/models.yaml`."
+                f"Added {len(added)} {provider} models to `{model_manager.config_path}`."
             )
         terminal_ui.console.print("Use /model (interactive) to pick the active model.")
         return
@@ -257,6 +260,9 @@ def main():
 
         try:
             removed = asyncio.run(logout_auth_provider(provider))
+        except KeyboardInterrupt:
+            terminal_ui.print_warning("Logout cancelled by user.")
+            return
         except Exception as e:
             terminal_ui.print_error(str(e), title="Logout Error")
             return
@@ -271,7 +277,7 @@ def main():
 
         if removed_models:
             terminal_ui.console.print(
-                f"Removed {len(removed_models)} managed {provider} models from `.ouro/models.yaml`."
+                f"Removed {len(removed_models)} managed {provider} models from `{model_manager.config_path}`."
             )
         return
 

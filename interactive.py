@@ -628,12 +628,18 @@ class InteractiveSession:
         if not provider:
             return
 
-        terminal_ui.print_info(f"Starting {provider} login flow...")
+        terminal_ui.print_info(f"Starting {provider} login flow... (Ctrl+C to cancel)")
         try:
-            status = await login_auth_provider(provider)
+            self.current_task = asyncio.create_task(login_auth_provider(provider))
+            status = await self.current_task
+        except asyncio.CancelledError:
+            terminal_ui.print_warning("Login cancelled.")
+            return
         except Exception as e:
             terminal_ui.print_error(str(e), title="Login Error")
             return
+        finally:
+            self.current_task = None
 
         added = sync_oauth_models(self.model_manager, provider)
 
@@ -643,7 +649,7 @@ class InteractiveSession:
             terminal_ui.console.print(f"Account ID: {status.account_id}")
         if added:
             terminal_ui.console.print(
-                f"Added {len(added)} {provider} models to `.ouro/models.yaml`."
+                f"Added {len(added)} {provider} models to `{self.model_manager.config_path}`."
             )
         terminal_ui.print_info("Run /model to pick the active model.")
 
@@ -657,10 +663,16 @@ class InteractiveSession:
             return
 
         try:
-            removed = await logout_auth_provider(provider)
+            self.current_task = asyncio.create_task(logout_auth_provider(provider))
+            removed = await self.current_task
+        except asyncio.CancelledError:
+            terminal_ui.print_warning("Logout cancelled.")
+            return
         except Exception as e:
             terminal_ui.print_error(str(e), title="Logout Error")
             return
+        finally:
+            self.current_task = None
 
         removed_models = remove_oauth_models(self.model_manager, provider)
 
@@ -671,7 +683,7 @@ class InteractiveSession:
 
         if removed_models:
             terminal_ui.console.print(
-                f"Removed {len(removed_models)} managed {provider} models from `.ouro/models.yaml`."
+                f"Removed {len(removed_models)} managed {provider} models from `{self.model_manager.config_path}`."
             )
 
         current_after = self.model_manager.get_current_model()

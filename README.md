@@ -44,7 +44,7 @@ models:
   anthropic/claude-sonnet-4:
     api_key: sk-ant-...
 
-  chatgpt/gpt-5.2-codex:
+  chatgpt/gpt-5.3-codex:
     timeout: 600
 
   ollama/llama2:
@@ -54,6 +54,9 @@ default: openai/gpt-4o
 ```
 
 For `chatgpt/*` subscription models, run `ouro --login` (or `/login` in interactive mode) and select provider before use.
+OAuth models shown in `/model` are seeded from ouro's bundled catalog (synced from pi-ai `openai-codex` model list).
+Maintainer note: refresh this catalog via `python scripts/update_oauth_model_catalog.py`.
+If browser auto-open is unavailable in your environment, manually open `https://auth.openai.com/codex/device` and enter the code shown in terminal. When existing token/refresh state is valid, login usually completes without opening a new browser page.
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list.
 

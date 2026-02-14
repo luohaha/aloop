@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import time
+import webbrowser
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,9 @@ _AUTH_PROVIDER_ALIASES = {
     "codex": "chatgpt",
     "openai-codex": "chatgpt",
 }
+
+CHATGPT_DEVICE_VERIFY_URL = "https://auth.openai.com/codex/device"
+TOKEN_EXPIRY_SKEW_SECONDS = 60
 
 
 @dataclass
@@ -57,13 +61,19 @@ def is_auth_status_logged_in(status: ChatGPTAuthStatus) -> bool:
     return status.exists and status.has_access_token
 
 
+def _normalize_token_dir(path: str) -> str:
+    return os.path.abspath(os.path.expanduser(path.strip()))
+
+
 def configure_chatgpt_auth_env() -> str:
     """Configure ChatGPT auth dir for LiteLLM and return it."""
     token_dir = os.environ.get("CHATGPT_TOKEN_DIR")
-    if token_dir:
-        return token_dir
+    if token_dir and token_dir.strip():
+        normalized = _normalize_token_dir(token_dir)
+        os.environ["CHATGPT_TOKEN_DIR"] = normalized
+        return normalized
 
-    token_dir = os.path.join(get_runtime_dir(), "auth", "chatgpt")
+    token_dir = _normalize_token_dir(os.path.join(get_runtime_dir(), "auth", "chatgpt"))
     os.environ["CHATGPT_TOKEN_DIR"] = token_dir
     return token_dir
 
@@ -102,6 +112,57 @@ async def _read_json(path: str) -> dict[str, Any] | None:
         return None
 
 
+def _parse_expires_at(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        with suppress(ValueError):
+            return int(float(value))
+    return None
+
+
+async def _should_open_browser_before_login() -> bool:
+    """Whether pre-opening browser is likely necessary.
+
+    If auth.json already has a valid access token or any refresh token,
+    LiteLLM can usually proceed without a fresh device login.
+    """
+    data = await _read_json(_get_chatgpt_auth_file_path())
+    if not data:
+        return True
+
+    if data.get("refresh_token"):
+        return False
+
+    access_token = bool(data.get("access_token"))
+    if not access_token:
+        return True
+
+    expires_at = _parse_expires_at(data.get("expires_at"))
+    if expires_at is None:
+        # unknown expiry; let authenticator decide without forcing a new browser tab
+        return False
+
+    return time.time() >= (expires_at - TOKEN_EXPIRY_SKEW_SECONDS)
+
+
+def _open_chatgpt_device_page_best_effort() -> bool:
+    """Open ChatGPT device-login page if possible.
+
+    Returns:
+        True if the browser launch was accepted by the platform handler.
+    """
+    if os.environ.get("OURO_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}:
+        return False
+
+    with suppress(Exception):
+        return bool(webbrowser.open(CHATGPT_DEVICE_VERIFY_URL, new=2))
+
+    return False
+
+
 def _get_chatgpt_authenticator():
     try:
         import litellm
@@ -128,6 +189,16 @@ def _get_chatgpt_authenticator():
 async def login_chatgpt() -> ChatGPTAuthStatus:
     """Run ChatGPT login flow via LiteLLM and return resulting status."""
     await _ensure_auth_dir()
+
+    # Best effort: pre-open device page only when a fresh login is likely required.
+    if await _should_open_browser_before_login():
+        opened = await asyncio.to_thread(_open_chatgpt_device_page_best_effort)
+        if not opened:
+            print(  # noqa: T201
+                "Could not open browser automatically. Open "
+                f"{CHATGPT_DEVICE_VERIFY_URL} manually.",
+                flush=True,
+            )
 
     authenticator = await asyncio.to_thread(_get_chatgpt_authenticator)
     await asyncio.to_thread(authenticator.get_access_token)
@@ -161,14 +232,7 @@ async def get_chatgpt_auth_status() -> ChatGPTAuthStatus:
     account_id = (data or {}).get("account_id")
     account_id = str(account_id) if account_id else None
 
-    expires_raw = (data or {}).get("expires_at")
-    expires_at: int | None = None
-    if isinstance(expires_raw, (int, float)):
-        expires_at = int(expires_raw)
-    elif isinstance(expires_raw, str):
-        with suppress(ValueError):
-            expires_at = int(float(expires_raw))
-
+    expires_at = _parse_expires_at((data or {}).get("expires_at"))
     expired = None if expires_at is None else time.time() >= expires_at
 
     return ChatGPTAuthStatus(

@@ -40,6 +40,9 @@ ouro --login
 
 # Logout (select provider from menu)
 ouro --logout
+
+# If browser does not open automatically, use this URL manually:
+# https://auth.openai.com/codex/device
 ```
 
 ## Interactive Mode

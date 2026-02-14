@@ -13,7 +13,7 @@ class _DummyConsole:
 
 
 def _setup_common(monkeypatch, argv: list[str]):
-    calls = {"error": [], "info": [], "success": []}
+    calls = {"error": [], "info": [], "success": [], "warning": []}
     console = _DummyConsole()
 
     monkeypatch.setattr(sys, "argv", ["ouro", *argv])
@@ -34,6 +34,11 @@ def _setup_common(monkeypatch, argv: list[str]):
         ouro_main.terminal_ui,
         "print_success",
         lambda msg: calls["success"].append(msg),
+    )
+    monkeypatch.setattr(
+        ouro_main.terminal_ui,
+        "print_warning",
+        lambda msg: calls["warning"].append(msg),
     )
     monkeypatch.setattr(ouro_main.terminal_ui, "console", console)
 
@@ -68,7 +73,11 @@ def test_main_login_success(monkeypatch):
     calls, console = _setup_common(monkeypatch, ["--login"])
     state = {"called": 0}
 
-    monkeypatch.setattr(ouro_main, "ModelManager", lambda: object())
+    monkeypatch.setattr(
+        ouro_main,
+        "ModelManager",
+        lambda: SimpleNamespace(config_path="/tmp/models.yaml"),
+    )
     monkeypatch.setattr(
         ouro_main,
         "sync_oauth_models",
@@ -116,10 +125,33 @@ def test_main_login_failure(monkeypatch):
     assert "boom" in calls["error"][0][1]
 
 
+def test_main_login_cancelled_by_keyboard_interrupt(monkeypatch):
+    calls, _ = _setup_common(monkeypatch, ["--login"])
+
+    async def fake_pick(mode: str):
+        assert mode == "login"
+        return "chatgpt"
+
+    async def fake_login(provider: str):
+        assert provider == "chatgpt"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ouro_main, "_pick_auth_provider_cli", fake_pick)
+    monkeypatch.setattr(ouro_main, "login_auth_provider", fake_login)
+
+    ouro_main.main()
+
+    assert calls["warning"] == ["Login cancelled by user."]
+
+
 def test_main_logout_success(monkeypatch):
     calls, _ = _setup_common(monkeypatch, ["--logout"])
 
-    monkeypatch.setattr(ouro_main, "ModelManager", lambda: object())
+    monkeypatch.setattr(
+        ouro_main,
+        "ModelManager",
+        lambda: SimpleNamespace(config_path="/tmp/models.yaml"),
+    )
     monkeypatch.setattr(
         ouro_main,
         "remove_oauth_models",
@@ -142,10 +174,33 @@ def test_main_logout_success(monkeypatch):
     assert calls["success"] == ["Logged out from chatgpt."]
 
 
+def test_main_logout_cancelled_by_keyboard_interrupt(monkeypatch):
+    calls, _ = _setup_common(monkeypatch, ["--logout"])
+
+    async def fake_pick(mode: str):
+        assert mode == "logout"
+        return "chatgpt"
+
+    async def fake_logout(provider: str):
+        assert provider == "chatgpt"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ouro_main, "_pick_auth_provider_cli", fake_pick)
+    monkeypatch.setattr(ouro_main, "logout_auth_provider", fake_logout)
+
+    ouro_main.main()
+
+    assert calls["warning"] == ["Logout cancelled by user."]
+
+
 def test_main_logout_when_no_state(monkeypatch):
     calls, _ = _setup_common(monkeypatch, ["--logout"])
 
-    monkeypatch.setattr(ouro_main, "ModelManager", lambda: object())
+    monkeypatch.setattr(
+        ouro_main,
+        "ModelManager",
+        lambda: SimpleNamespace(config_path="/tmp/models.yaml"),
+    )
     monkeypatch.setattr(
         ouro_main,
         "remove_oauth_models",
