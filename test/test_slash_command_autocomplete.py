@@ -35,6 +35,17 @@ def test_command_completer_prefix_filters_and_start_position() -> None:
     assert completions[0].start_position == -2
 
 
+def test_command_completer_caches_results_for_same_input() -> None:
+    completer = CommandCompleter(commands=["help", "reset"])
+    doc = Document(text="/he", cursor_position=3)
+
+    first = list(completer.get_completions(doc, None))
+    second = list(completer.get_completions(doc, None))
+
+    # Exact same objects indicates caching worked.
+    assert first[0] is second[0]
+
+
 def test_input_handler_completes_while_typing() -> None:
     handler = InputHandler(history_file=None, commands=["help", "reset"])
     assert handler.session.complete_while_typing is True

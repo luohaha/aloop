@@ -46,7 +46,10 @@ def _normalize_command_tree(
 
 
 class CommandCompleter(Completer):
-    """Auto-completer for slash commands and file paths."""
+    """Auto-completer for slash commands."""
+
+    _cache_key: str | None
+    _cache_completions: list[Completion]
 
     def __init__(
         self,
@@ -82,6 +85,9 @@ class CommandCompleter(Completer):
         self.help_texts = help_texts or {}
         self.display_texts = display_texts or {}
 
+        self._cache_key = None
+        self._cache_completions = []
+
     def get_completions(self, document, complete_event):
         """Get completions for the current input.
 
@@ -93,6 +99,15 @@ class CommandCompleter(Completer):
             Completion objects
         """
         text = document.text_before_cursor
+
+        # Cache by full text-before-cursor; prompt_toolkit may call the completer
+        # multiple times per render.
+        if text == self._cache_key:
+            for c in self._cache_completions:
+                yield c
+            return
+
+        completions: list[Completion] = []
 
         # Complete commands starting with /
         if text.startswith("/"):
@@ -106,22 +121,34 @@ class CommandCompleter(Completer):
                     for sub in matching:
                         key = f"{base} {sub}".strip()
                         display = self.display_texts.get(key, f"/{base} {sub}")
-                        yield Completion(
-                            sub,
-                            start_position=-len(rest),
-                            display=display,
-                            display_meta=self._get_command_help(key),
+                        completions.append(
+                            Completion(
+                                sub,
+                                start_position=-len(rest),
+                                display=display,
+                                display_meta=self._get_command_help(key),
+                            )
                         )
-                return
 
-            matching_commands = [cmd for cmd in self.commands if cmd.startswith(cmd_text)]
-            for cmd in matching_commands:
-                yield Completion(
-                    cmd,
-                    start_position=-len(cmd_text),
-                    display=self.display_texts.get(cmd, f"/{cmd}"),
-                    display_meta=self._get_command_help(cmd),
+            else:
+                matching_commands = [cmd for cmd in self.commands if cmd.startswith(cmd_text)]
+                completions.extend(
+                    [
+                        Completion(
+                            cmd,
+                            start_position=-len(cmd_text),
+                            display=self.display_texts.get(cmd, f"/{cmd}"),
+                            display_meta=self._get_command_help(cmd),
+                        )
+                        for cmd in matching_commands
+                    ]
                 )
+
+        self._cache_key = text
+        self._cache_completions = completions
+
+        for c in completions:
+            yield c
 
     def _get_command_help(self, cmd: str) -> str:
         """Get help text for a command.
@@ -158,6 +185,9 @@ class CommandCompleter(Completer):
 class InputHandler:
     """Enhanced input handler with completion, history, and shortcuts."""
 
+    _suggest_cache_text: str | None
+    _suggest_cache_results: list[tuple[str, str]]
+
     def __init__(
         self,
         history_file: Optional[str] = None,
@@ -174,6 +204,9 @@ class InputHandler:
         """
         # Set up history
         history = FileHistory(history_file) if history_file else InMemoryHistory()
+
+        self._suggest_cache_text = None
+        self._suggest_cache_results = []
 
         display_texts: dict[str, str] | None = None
         if command_registry is not None:
@@ -258,8 +291,14 @@ class InputHandler:
         self.session.default_buffer.on_text_changed += _on_text_changed
 
     def _get_command_suggestions(self, text: str) -> list[tuple[str, str]]:
+        if text == self._suggest_cache_text:
+            return self._suggest_cache_results
+
         if not text.startswith("/"):
+            self._suggest_cache_text = text
+            self._suggest_cache_results = []
             return []
+
         cmd_text = text[1:]
         if " " in cmd_text:
             base, _, rest = cmd_text.partition(" ")
@@ -269,23 +308,32 @@ class InputHandler:
                     for sub in self.completer.command_subcommands[base]
                     if sub.startswith(rest)
                 ]
-                return [
+                results = [
                     (
                         self.completer.display_texts.get(cmd, f"/{cmd}"),
                         self.completer._get_command_help(cmd),
                     )
                     for cmd in matches
                 ]
+                self._suggest_cache_text = text
+                self._suggest_cache_results = results
+                return results
+
+            self._suggest_cache_text = text
+            self._suggest_cache_results = []
             return []
 
         matches = [cmd for cmd in self.completer.commands if cmd.startswith(cmd_text)]
-        return [
+        results = [
             (
                 self.completer.display_texts.get(cmd, f"/{cmd}"),
                 self.completer._get_command_help(cmd),
             )
             for cmd in matches
         ]
+        self._suggest_cache_text = text
+        self._suggest_cache_results = results
+        return results
 
     def _create_key_bindings(self) -> KeyBindings:
         """Create custom key bindings.
