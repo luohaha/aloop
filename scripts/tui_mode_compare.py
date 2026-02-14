@@ -3,7 +3,6 @@
 
 Modes covered:
 - default (no OURO_TUI)
-- ptk      (OURO_TUI=ptk)
 - ptk2     (OURO_TUI=ptk2)
 
 Why this script uses PTY + marker matching:
@@ -29,8 +28,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional
-
+from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
@@ -52,7 +50,7 @@ def compact(text: str) -> str:
 class StepResult:
     step: str
     ok: bool
-    latency_s: Optional[float] = None
+    latency_s: float | None = None
     detail: str = ""
 
 
@@ -60,7 +58,7 @@ class StepResult:
 class ModeResult:
     mode: str
     ok: bool
-    startup_s: Optional[float]
+    startup_s: float | None
     total_s: float
     steps: list[StepResult] = field(default_factory=list)
     error_tail: str = ""
@@ -104,7 +102,7 @@ class PtySession:
         self,
         patterns: Iterable[str],
         timeout: float,
-        since_len: Optional[int] = None,
+        since_len: int | None = None,
     ) -> tuple[bool, str]:
         patterns = list(patterns)
         compact_patterns = [compact(p) for p in patterns]
@@ -174,48 +172,134 @@ def run_mode(mode: str) -> ModeResult:
         startup_s = time.monotonic() - start_time if ok else None
         steps.append(StepResult("startup", ok, startup_s if ok else None, detail))
         if not ok:
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
         if not run_step("help", "/help\r", ["Available Commands:", "Keyboard", "model edit"], 10.0):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
         # Keyboard scroll fallback smoke in case physical mouse isn't available.
         session.send("\x1b[5~\x1b[6~")
         time.sleep(0.1)
         if not session.is_alive():
-            steps.append(StepResult("scroll_keys_alive", False, None, "process died after page up/down"))
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            steps.append(
+                StepResult("scroll_keys_alive", False, None, "process died after page up/down")
+            )
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
         basic_plan: list[tuple[str, str, list[str], float]] = [
             ("stats", "/stats\r", ["Memory Statistics"], 8.0),
-            ("resume", "/resume\r", ["Recent Sessions:", "No saved sessions found.", "Usage: /resume"], 8.0),
+            (
+                "resume",
+                "/resume\r",
+                ["Recent Sessions:", "No saved sessions found.", "Usage: /resume"],
+                8.0,
+            ),
             ("theme", "/theme\r", ["Switched to light theme", "Switched to dark theme"], 8.0),
             ("verbose", "/verbose\r", ["Verbose thinking display"], 8.0),
-            ("compact", "/compact\r", ["Nothing to compress.", "No messages to compress", "Compressed "], 10.0),
+            (
+                "compact",
+                "/compact\r",
+                ["Nothing to compress.", "No messages to compress", "Compressed "],
+                10.0,
+            ),
         ]
         for step, payload, markers, timeout in basic_plan:
             if not run_step(step, payload, markers, timeout):
-                return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+                return ModeResult(
+                    mode,
+                    False,
+                    startup_s,
+                    time.monotonic() - start_time,
+                    steps,
+                    session.text_tail[-6000:],
+                )
 
         if not run_step("model_open", "/model\r", ["Select Model"], 8.0):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
-        if not run_step("model_pick", "\r", ["Switched to model:", "Failed to switch to model"], 8.0):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
+        if not run_step(
+            "model_pick", "\r", ["Switched to model:", "Failed to switch to model"], 8.0
+        ):
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
-        if not run_step("skills_open", "/skills\r", ["Choose an action", "Skills\nChoose an action"], 8.0):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+        if not run_step(
+            "skills_open", "/skills\r", ["Choose an action", "Skills\nChoose an action"], 8.0
+        ):
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
         if not run_step(
             "skills_pick",
             "\r",
             ["Installed Skills:", "No installed skills found", "skill-installer", "skill-creator"],
             8.0,
         ):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
         if not run_step("reset", "/reset\r", ["Memory cleared. Starting fresh conversation."], 8.0):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
         if not run_step("exit", "/exit\r", ["Exiting interactive mode. Goodbye!"], 8.0):
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
         # Ensure process exits after /exit.
         wait_start = time.monotonic()
@@ -223,7 +307,14 @@ def run_mode(mode: str) -> ModeResult:
             session.read_some(0.05)
         if session.is_alive():
             steps.append(StepResult("process_exit", False, None, "did not exit after /exit"))
-            return ModeResult(mode, False, startup_s, time.monotonic() - start_time, steps, session.text_tail[-6000:])
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
 
         return ModeResult(mode, True, startup_s, time.monotonic() - start_time, steps)
     finally:
@@ -231,7 +322,7 @@ def run_mode(mode: str) -> ModeResult:
 
 
 def main() -> int:
-    modes = ["default", "ptk", "ptk2"]
+    modes = ["default", "ptk2"]
     results = [run_mode(mode) for mode in modes]
 
     print("=== SUMMARY ===")

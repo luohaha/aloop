@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Benchmark startup/help/exit latency across TUI modes.
+"""Benchmark interactive command-flow latency across TUI modes.
+
+Modes covered:
+- default (no OURO_TUI)
+- ptk2    (OURO_TUI=ptk2)
+
+This is a command-flow benchmark, not just startup timing:
+- startup
+- /help /stats /resume /theme /verbose /compact
+- /model (open + pick current)
+- /skills (open + pick list)
+- /reset /exit
 
 Method notes:
-- Uses PTY for realistic TUI startup/render timing.
-- Runs multiple samples per mode and reports mean/p50/min/max to reduce
-  single-run noise.
-- Startup can have occasional outliers due to external initialization
-  (e.g. network fallback in dependencies), so p50 is often a better signal
-  than mean.
+- Uses PTY for realistic TUI timing and redraw behavior.
+- Matches markers incrementally (only output produced after each command).
+- Repeats runs and reports mean/p50/min/max per step.
 """
 
 from __future__ import annotations
@@ -20,15 +28,43 @@ import select
 import statistics
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 WHITESPACE_RE = re.compile(r"\s+")
+
+
+STEP_DEFS: list[tuple[str, str, list[str], float]] = [
+    ("help", "/help\r", ["Available Commands:", "Keyboard", "model edit"], 10.0),
+    ("stats", "/stats\r", ["Memory Statistics"], 8.0),
+    (
+        "resume",
+        "/resume\r",
+        ["Recent Sessions:", "No saved sessions found.", "Usage: /resume"],
+        8.0,
+    ),
+    ("theme", "/theme\r", ["Switched to light theme", "Switched to dark theme"], 8.0),
+    ("verbose", "/verbose\r", ["Verbose thinking display"], 8.0),
+    (
+        "compact",
+        "/compact\r",
+        ["Nothing to compress.", "No messages to compress", "Compressed "],
+        10.0,
+    ),
+    ("model_open", "/model\r", ["Select Model"], 8.0),
+    ("model_pick", "\r", ["Switched to model:", "Failed to switch to model"], 8.0),
+    ("skills_open", "/skills\r", ["Choose an action", "Skills\nChoose an action"], 8.0),
+    (
+        "skills_pick",
+        "\r",
+        ["Installed Skills:", "No installed skills found", "skill-installer", "skill-creator"],
+        8.0,
+    ),
+    ("reset", "/reset\r", ["Memory cleared. Starting fresh conversation."], 8.0),
+    ("exit", "/exit\r", ["Exiting interactive mode. Goodbye!"], 8.0),
+]
 
 
 def strip_ansi(text: str) -> str:
@@ -39,13 +75,6 @@ def strip_ansi(text: str) -> str:
 
 def compact(text: str) -> str:
     return WHITESPACE_RE.sub("", text)
-
-
-@dataclass
-class Sample:
-    startup_s: float
-    help_s: float
-    exit_s: float
 
 
 class PtySession:
@@ -79,7 +108,7 @@ class PtySession:
             return
         if not data:
             return
-        self.buffer = (self.buffer + strip_ansi(data.decode("utf-8", errors="ignore")))[-220000:]
+        self.buffer = (self.buffer + strip_ansi(data.decode("utf-8", errors="ignore")))[-260000:]
 
     def wait_for(self, patterns: list[str], timeout: float, since_len: int) -> bool:
         compact_patterns = [compact(p) for p in patterns]
@@ -112,34 +141,31 @@ class PtySession:
                 os.close(self.master_fd)
 
 
-def run_once(mode: str) -> Optional[Sample]:
+def run_once(mode: str) -> dict[str, float] | None:
     session = PtySession(mode)
     try:
-        start_idx = len(session.buffer)
+        metrics: dict[str, float] = {}
+
+        startup_idx = len(session.buffer)
         t0 = time.monotonic()
         if not session.wait_for(
             ["Interactive mode started. Type your message or use commands."],
             timeout=30,
-            since_len=start_idx,
+            since_len=startup_idx,
         ):
             return None
-        startup_s = time.monotonic() - t0
+        metrics["startup"] = time.monotonic() - t0
 
-        help_idx = len(session.buffer)
-        t1 = time.monotonic()
-        session.send("/help\r")
-        if not session.wait_for(["Available Commands:", "Keyboard", "model edit"], timeout=10, since_len=help_idx):
-            return None
-        help_s = time.monotonic() - t1
+        for step_name, payload, markers, timeout in STEP_DEFS:
+            step_idx = len(session.buffer)
+            start = time.monotonic()
+            session.send(payload)
+            ok = session.wait_for(markers, timeout=timeout, since_len=step_idx)
+            if not ok:
+                return None
+            metrics[step_name] = time.monotonic() - start
 
-        exit_idx = len(session.buffer)
-        t2 = time.monotonic()
-        session.send("/exit\r")
-        if not session.wait_for(["Exiting interactive mode. Goodbye!"], timeout=10, since_len=exit_idx):
-            return None
-        exit_s = time.monotonic() - t2
-
-        return Sample(startup_s=startup_s, help_s=help_s, exit_s=exit_s)
+        return metrics
     finally:
         session.close()
 
@@ -152,30 +178,28 @@ def summarize(samples: list[float]) -> str:
 
 
 def main() -> int:
-    modes = ["default", "ptk", "ptk2"]
-    runs = 5
+    modes = ["default", "ptk2"]
+    runs = int(os.environ.get("TUI_BENCH_RUNS", "5"))
+    step_names = ["startup"] + [name for name, _, _, _ in STEP_DEFS]
 
     for mode in modes:
+        metrics_by_step: dict[str, list[float]] = {name: [] for name in step_names}
         pass_count = 0
-        startups: list[float] = []
-        helps: list[float] = []
-        exits: list[float] = []
 
         for _ in range(runs):
             sample = run_once(mode)
             if sample is None:
                 continue
             pass_count += 1
-            startups.append(sample.startup_s)
-            helps.append(sample.help_s)
-            exits.append(sample.exit_s)
+            for name in step_names:
+                metrics_by_step[name].append(sample[name])
 
         fail_count = runs - pass_count
         print(f"mode={mode} runs={runs} pass={pass_count} fail={fail_count}")
-        if pass_count:
-            print(f"  startup_s : {summarize(startups)}")
-            print(f"  help_s    : {summarize(helps)}")
-            print(f"  exit_s    : {summarize(exits)}")
+        if pass_count == 0:
+            continue
+        for name in step_names:
+            print(f"  {name:11}: {summarize(metrics_by_step[name])}")
 
     return 0
 

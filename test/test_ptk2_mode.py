@@ -20,7 +20,11 @@ def test_normalize_output_chunk_strips_control_noise() -> None:
 
 
 def test_next_follow_tail_state_from_scroll_events() -> None:
-    assert next_follow_tail_state(current_follow_tail=True, scroll_delta=-1, at_bottom=False) is False
-    assert next_follow_tail_state(current_follow_tail=False, scroll_delta=1, at_bottom=False) is False
+    assert (
+        next_follow_tail_state(current_follow_tail=True, scroll_delta=-1, at_bottom=False) is False
+    )
+    assert (
+        next_follow_tail_state(current_follow_tail=False, scroll_delta=1, at_bottom=False) is False
+    )
     assert next_follow_tail_state(current_follow_tail=False, scroll_delta=1, at_bottom=True) is True
     assert next_follow_tail_state(current_follow_tail=True, scroll_delta=0, at_bottom=False) is True

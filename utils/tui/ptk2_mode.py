@@ -1,4 +1,4 @@
-"""Experimental PTK2 interactive mode (single renderer spike)."""
+"""PTK2 interactive mode using a single prompt_toolkit renderer."""
 
 from __future__ import annotations
 
@@ -10,16 +10,16 @@ from collections.abc import Callable
 from typing import IO, cast
 
 from prompt_toolkit.application import Application
-import agent.base as agent_base_module
 from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.document import Document
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 from rich.console import Console
 
+import agent.base as agent_base_module
 from interactive import InteractiveSession
 from utils import terminal_ui
 from utils.tui.theme import Theme
@@ -84,7 +84,7 @@ class _PTK2AsyncSpinner:
         self.console = console
         self.message = message
 
-    async def __aenter__(self) -> "_PTK2AsyncSpinner":
+    async def __aenter__(self) -> _PTK2AsyncSpinner:
         if not self.console.quiet:
             terminal_ui.print_thinking(self.message)
         return self
@@ -328,9 +328,13 @@ class PTK2Driver:
         follow_tail: bool,
         preserve_scroll: int | None = None,
     ) -> None:
-        cursor_position = len(text) if follow_tail else min(
-            self.output_area.buffer.cursor_position,
-            len(text),
+        cursor_position = (
+            len(text)
+            if follow_tail
+            else min(
+                self.output_area.buffer.cursor_position,
+                len(text),
+            )
         )
         self.output_area.buffer.set_document(
             Document(text=text, cursor_position=cursor_position),
