@@ -1,7 +1,7 @@
 """Core memory manager that orchestrates all memory operations."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from config import Config
 from llm.content_utils import content_has_tool_calls
@@ -69,9 +69,6 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
-
-        # Optional callback to get current todo context for compression
-        self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
 
         # Long-term memory (cross-session)
         self._long_term = None
@@ -263,18 +260,6 @@ class MemoryManager:
         """Access the long-term memory manager (None if disabled)."""
         return self._long_term
 
-    def set_todo_context_provider(self, provider: Callable[[], Optional[str]]) -> None:
-        """Set a callback to provide current todo context for compression.
-
-        The provider should return a formatted string of current todo items,
-        or None if no todos exist. This context will be injected into
-        compression summaries to preserve task state.
-
-        Args:
-            provider: Callable that returns current todo context string or None
-        """
-        self._todo_context_provider = provider
-
     async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
@@ -301,18 +286,12 @@ class MemoryManager:
         logger.info(f"🗜️  Compressing {message_count} messages using {strategy} strategy")
 
         try:
-            # Get todo context if provider is set
-            todo_context = None
-            if self._todo_context_provider:
-                todo_context = self._todo_context_provider()
-
             # Perform compression with TUI spinner
             async with AsyncSpinner(terminal_ui.console, "Compressing memory..."):
                 compressed = await self.compressor.compress(
                     messages,
                     strategy=strategy,
                     target_tokens=self._calculate_target_tokens(),
-                    todo_context=todo_context,
                 )
 
             # Track compression results

@@ -6,11 +6,9 @@ from typing import TYPE_CHECKING, List, Optional
 from llm import LLMMessage, LLMResponse, StopReason, ToolResult
 from memory import MemoryManager
 from tools.base import BaseTool
-from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
 from utils.tui.progress import AsyncSpinner
 
-from .todo import TodoList
 from .tool_executor import ToolExecutor
 from .verification import LLMVerifier, VerificationResult, Verifier
 
@@ -42,20 +40,11 @@ class BaseAgent(ABC):
         self.max_iterations = max_iterations
         self.model_manager = model_manager
 
-        # Initialize todo list system
-        self.todo_list = TodoList()
-
-        # Add todo tool to the tools list if enabled
         tools = [] if tools is None else list(tools)  # Make a copy to avoid modifying original
-
-        todo_tool = TodoTool(self.todo_list)
-        tools.append(todo_tool)
-
         self.tool_executor = ToolExecutor(tools)
 
         # Memory manager is fully owned by the agent
         self.memory = MemoryManager(llm)
-        self.memory.set_todo_context_provider(self._get_todo_context)
 
     async def load_session(self, session_id: str) -> None:
         """Load a saved session into the agent's memory.
@@ -64,7 +53,6 @@ class BaseAgent(ABC):
             session_id: Session ID to load
         """
         self.memory = await MemoryManager.from_session(session_id, self.llm)
-        self.memory.set_todo_context_provider(self._get_todo_context)
 
     def _set_llm_adapter(self, llm: "LiteLLMAdapter") -> None:
         self.llm = llm
@@ -114,17 +102,6 @@ class BaseAgent(ABC):
             Extracted text
         """
         return self.llm.extract_text(response)
-
-    def _get_todo_context(self) -> Optional[str]:
-        """Get current todo list state for memory compression.
-
-        Returns formatted todo list if items exist, None otherwise.
-        This is used by MemoryManager to inject todo state into summaries.
-        """
-        items = self.todo_list.get_current()
-        if not items:
-            return None
-        return self.todo_list.format_list()
 
     async def _react_loop(
         self,

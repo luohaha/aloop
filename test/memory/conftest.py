@@ -118,28 +118,28 @@ def tool_use_messages():
 
 @pytest.fixture
 def protected_tool_messages():
-    """Create messages with protected tool (manage_todo_list)."""
+    """Create messages with a tool call."""
     return [
-        LLMMessage(role="user", content="Add a todo item"),
+        LLMMessage(role="user", content="Read the config file"),
         LLMMessage(
             role="assistant",
             content=[
-                {"type": "text", "text": "I'll add that to the todo list."},
+                {"type": "text", "text": "I'll read that file."},
                 {
                     "type": "tool_use",
-                    "id": "tool_todo_1",
-                    "name": "manage_todo_list",
-                    "input": {"action": "add", "item": "Test item"},
+                    "id": "tool_read_1",
+                    "name": "read_file",
+                    "input": {"path": "config.yaml"},
                 },
             ],
         ),
         LLMMessage(
             role="user",
             content=[
-                {"type": "tool_result", "tool_use_id": "tool_todo_1", "content": "Todo item added"}
+                {"type": "tool_result", "tool_use_id": "tool_read_1", "content": "key: value"}
             ],
         ),
-        LLMMessage(role="assistant", content="Todo item has been added."),
+        LLMMessage(role="assistant", content="The config file contains key: value."),
     ]
 
 

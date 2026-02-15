@@ -145,7 +145,6 @@ ouro --resume a1b2c3d4
 | `web_fetch` | Fetch and extract web page content |
 | `multi_task` | Run multiple sub-agent tasks in parallel |
 | `notify` | Send email notifications (Resend) |
-| `manage_todo_list` | Manage a task/todo list |
 
 ## Project Structure
 
@@ -160,8 +159,7 @@ ouro/
 │   ├── agent.py            # LoopAgent
 │   ├── verification.py     # LLMVerifier for Ralph loop
 │   ├── context.py          # Context injection (cwd, platform, date)
-│   ├── tool_executor.py    # Tool execution engine
-│   └── todo.py             # Todo list data structure
+│   └── tool_executor.py    # Tool execution engine
 ├── llm/
 │   ├── litellm_adapter.py  # LiteLLM adapter (100+ providers)
 │   ├── model_manager.py    # Model config from ~/.ouro/models.yaml

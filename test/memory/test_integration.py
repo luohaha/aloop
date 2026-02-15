@@ -327,33 +327,26 @@ class TestCompressionIntegration:
 class TestEdgeCaseIntegration:
     """Integration tests for edge cases."""
 
-    async def test_compression_with_no_compressible_content(
+    async def test_compression_with_tool_messages(
         self, set_memory_config, mock_llm, protected_tool_messages
     ):
-        """Test compression when all content is protected."""
+        """Test compression with tool call messages."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid auto-compression
             MEMORY_SHORT_TERM_MIN_SIZE=0,
         )
         manager = MemoryManager(mock_llm)
 
-        # Add only protected tool messages
+        # Add tool messages
         for msg in protected_tool_messages:
             await manager.add_message(msg)
 
         # Force compression
         result = await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
-        # Should preserve everything or nearly everything
+        # Should produce a valid compression result
         assert result is not None
-        # Protected tools should be preserved in result.messages
-        found_protected = False
-        for msg in result.messages:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict) and block.get("name") == "manage_todo_list":
-                        found_protected = True
-        assert found_protected or len(result.messages) > 0
+        assert len(result.messages) > 0
 
     async def test_rapid_compression_cycles(self, set_memory_config, mock_llm):
         """Test many rapid compression cycles."""

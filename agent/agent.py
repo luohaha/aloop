@@ -50,7 +50,6 @@ When you have enough information, provide your final answer directly without usi
 - Use smart_edit for precise changes (fuzzy match, auto backup, diff preview)
 - Use write_file only for creating new files or complete rewrites
 - Use multi_task for parallelizable tasks
-- Use manage_todo_list to track progress for complex tasks
 </tool_usage_guidelines>
 
 <agents_md>
@@ -58,9 +57,7 @@ Project instructions may be defined in AGENTS.md files in the project directory 
 Before modifying code, check for AGENTS.md: glob_files(pattern="AGENTS.md")
 If found, read it with read_file and follow the project-specific instructions.
 AGENTS.md is optional. If not found, proceed normally.
-</agents_md>
-
-"""
+</agents_md>"""
 
     async def run(self, task: str, verify: bool = False) -> str:
         """Execute ReAct loop until task is complete.

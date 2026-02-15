@@ -21,7 +21,7 @@ test/memory/
 - **Basic functionality**: initialization, adding messages, context retrieval
 - **Compression triggering**: soft limit, hard limit, short-term full
 - **Tool call/result matching**: Critical tests for the tool pair matching issue
-- **Protected tools**: Tests for `manage_todo_list` and other protected tools
+- **Protected tools**: Tests for protected tool handling
 - **Edge cases**: empty compression, single message, actual token counts
 
 ### 2. Compressor Tests (`test_compressor.py`)
@@ -88,7 +88,7 @@ Defined in `conftest.py`:
 - `mock_llm`: Mock LLM that doesn't make real API calls
 - `simple_messages`: List of simple text messages
 - `tool_use_messages`: Messages with tool_use and tool_result pairs
-- `protected_tool_messages`: Messages with protected tools (manage_todo_list)
+- `protected_tool_messages`: Messages with tool call pairs
 - `mismatched_tool_messages`: Messages with mismatched tool pairs (for bug testing)
 
 ## Critical Tests for Tool Matching Issue
@@ -117,7 +117,7 @@ The memory system MUST follow these rules:
 
 1. **Tool pairs stay together**: If `tool_use` is preserved, its `tool_result` must be preserved
 2. **No split pairs**: Tool pairs cannot be split between preserved and compressed messages
-3. **Protected tools never compressed**: Tools like `manage_todo_list` are always preserved
+3. **Protected tools never compressed**: Tools in PROTECTED_TOOLS are always preserved
 4. **Orphan detection**: The system should not create orphaned tool_use or tool_result
 
 ### Compression Triggers
