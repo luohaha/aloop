@@ -68,6 +68,13 @@ class InputArea(Widget):
 
     InputArea #completion-list > .option-list--option {
         padding: 0 1;
+        color: $text;
+    }
+
+    InputArea #completion-list > .option-list--option-highlighted {
+        background: $primary;
+        color: $text;
+        text-style: bold;
     }
     """
 
