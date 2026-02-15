@@ -221,6 +221,7 @@ class BaseAgent(ABC, AgentEventEmitter):
             if response.stop_reason == StopReason.TOOL_CALLS:
                 # Print assistant text content alongside tool calls
                 if response.content:
+                    self.emit_event(AssistantResponse(content=response.content, is_final=False))
                     terminal_ui.print_assistant_message(response.content)
 
                 tool_calls = self.llm.extract_tool_calls(response)

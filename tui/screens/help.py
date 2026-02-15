@@ -90,10 +90,12 @@ class HelpScreen(ModalScreen[None]):
 
             commands = [
                 ("/help", "Show available commands"),
-                ("/clear", "Clear conversation memory"),
+                ("/clear, /reset", "Clear conversation memory"),
                 ("/stats", "Show memory statistics"),
-                ("/history", "List saved sessions"),
-                ("/dump-memory <id>", "Export session to JSON"),
+                ("/compact", "Compress conversation memory"),
+                ("/model [id]", "Show or switch models"),
+                ("/verbose", "Toggle thinking display"),
+                ("/resume <id>", "Resume a saved session"),
                 ("/exit", "Exit aloop"),
             ]
 

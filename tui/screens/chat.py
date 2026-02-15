@@ -167,6 +167,9 @@ class ChatScreen(Screen):
         elif isinstance(event, AssistantResponse):
             if event.is_final:
                 panel.update_streaming_content(event.content, is_complete=True)
+            else:
+                # Intermediate content alongside tool calls
+                panel.update_streaming_content(event.content, is_complete=False)
 
     def _set_activity(self, text: str) -> None:
         """Set activity bar text."""
@@ -210,14 +213,20 @@ class ChatScreen(Screen):
             self.app.exit()
         elif command == "/help":
             self.action_show_help()
-        elif command == "/clear":
+        elif command in ("/clear", "/reset"):
             self._handle_clear_command()
         elif command == "/stats":
             self._handle_stats_command()
-        elif command == "/history":
-            self._handle_history_command()
-        elif command == "/dump-memory":
-            self._handle_dump_memory_command(args)
+        elif command == "/compact":
+            self._handle_compact_command()
+        elif command == "/model":
+            self._handle_model_command(args)
+        elif command == "/verbose":
+            self._handle_verbose_command()
+        elif command == "/theme":
+            self._handle_theme_command()
+        elif command == "/resume":
+            self._handle_resume_command(args)
         else:
             panel = self.query_one(MessagePanel)
             panel.add_assistant_message(
@@ -247,7 +256,7 @@ class ChatScreen(Screen):
         # Run agent
         self._current_worker = self._run_agent(message)
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, exit_on_error=False)
     def _run_agent(self, message: str) -> str:
         """Run agent in background thread."""
         loop = asyncio.new_event_loop()
@@ -344,21 +353,125 @@ class ChatScreen(Screen):
         except Exception as e:
             self.query_one(MessagePanel).add_assistant_message(content=f"Error: {e}")
 
-    def _handle_history_command(self) -> None:
-        """Handle /history command."""
+    def _handle_compact_command(self) -> None:
+        """Handle /compact command - compress conversation memory."""
+        panel = self.query_one(MessagePanel)
+
+        @work(thread=True, exit_on_error=False)
+        async def do_compact(self_ref: "ChatScreen") -> None:
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(self_ref.agent.memory.compress())
+            finally:
+                loop.close()
+            if result is None:
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message, content="Nothing to compress."
+                )
+            else:
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message,
+                    content=(
+                        f"Compressed {result.original_message_count} messages: "
+                        f"{result.original_tokens} -> {result.compressed_tokens} tokens "
+                        f"({result.savings_percentage:.0f}% saved)"
+                    ),
+                )
+            self_ref.app.call_from_thread(self_ref._update_stats_from_memory)
+
+        do_compact(self)
+
+    def _handle_model_command(self, args: List[str]) -> None:
+        """Handle /model command - show current model or switch."""
+        panel = self.query_one(MessagePanel)
+        model_info = self.agent.get_current_model_info()
+
+        if not args:
+            # Show current model info and available models
+            if not model_info:
+                panel.add_assistant_message(content="No model configured.")
+                return
+
+            model_manager = getattr(self.agent, "model_manager", None)
+            if not model_manager:
+                panel.add_assistant_message(content=f"Current model: `{model_info['model_id']}`")
+                return
+
+            profiles = model_manager.list_models()
+            current_id = model_info["model_id"]
+            lines = ["**Available Models**\n"]
+            for p in profiles:
+                marker = " **(current)**" if p.model_id == current_id else ""
+                lines.append(f"- `{p.model_id}`{marker}")
+            lines.append("\nUsage: `/model <model_id>` to switch.")
+            panel.add_assistant_message(content="\n".join(lines))
+            return
+
+        # Switch model
+        target = " ".join(args)
+        success = self.agent.switch_model(target)
+        if success:
+            new_info = self.agent.get_current_model_info()
+            new_name = new_info["model_id"] if new_info else target
+            panel.add_assistant_message(content=f"Switched to model: `{new_name}`")
+            # Update header
+            header = self.query_one(Header)
+            header.model = new_name
+        else:
+            panel.add_assistant_message(
+                content=f"Failed to switch to model `{target}`. Use `/model` to see available models."
+            )
+
+    def _handle_verbose_command(self) -> None:
+        """Handle /verbose command - toggle thinking display."""
+        from config import Config
+
+        Config.TUI_SHOW_THINKING = not Config.TUI_SHOW_THINKING
+        status = "enabled" if Config.TUI_SHOW_THINKING else "disabled"
+        panel = self.query_one(MessagePanel)
+        panel.add_assistant_message(content=f"Verbose thinking display **{status}**.")
+
+    def _handle_theme_command(self) -> None:
+        """Handle /theme command."""
         panel = self.query_one(MessagePanel)
         panel.add_assistant_message(
-            content="History browsing is not yet supported in TUI mode. "
-            "Use the classic interactive mode with `/history`."
+            content="Theme switching is handled by Textual. "
+            "Use `textual` dark/light mode settings."
         )
 
-    def _handle_dump_memory_command(self, args: List[str]) -> None:
-        """Handle /dump-memory command."""
+    def _handle_resume_command(self, args: List[str]) -> None:
+        """Handle /resume command - resume a previous session."""
         panel = self.query_one(MessagePanel)
-        panel.add_assistant_message(
-            content="Memory dump is not yet supported in TUI mode. "
-            "Use the classic interactive mode with `/dump-memory`."
-        )
+        if not args:
+            panel.add_assistant_message(content="Usage: `/resume <session_id>`")
+            return
+
+        session_id = args[0]
+
+        @work(thread=True, exit_on_error=False)
+        async def do_resume(self_ref: "ChatScreen") -> None:
+            from memory import MemoryManager
+
+            loop = asyncio.new_event_loop()
+            try:
+                resolved = loop.run_until_complete(MemoryManager.find_session_by_prefix(session_id))
+                if not resolved:
+                    self_ref.app.call_from_thread(
+                        panel.add_assistant_message,
+                        content=f"Session `{session_id}` not found.",
+                    )
+                    return
+                loop.run_until_complete(self_ref.agent.load_session(resolved))
+                msg_count = self_ref.agent.memory.short_term.count()
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message,
+                    content=f"Resumed session `{resolved}` ({msg_count} messages).",
+                )
+                self_ref.app.call_from_thread(self_ref._update_stats_from_memory)
+            finally:
+                loop.close()
+
+        do_resume(self)
 
     def action_show_help(self) -> None:
         self.app.push_screen(HelpScreen())
