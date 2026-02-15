@@ -91,9 +91,10 @@ class Config:
     # Memory Management Configuration
     MEMORY_ENABLED = _cfg.get("MEMORY_ENABLED", "true").lower() == "true"
     MEMORY_COMPRESSION_THRESHOLD = int(_cfg.get("MEMORY_COMPRESSION_THRESHOLD", "60000"))
-    MEMORY_SHORT_TERM_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_SIZE", "100"))
+    MEMORY_SHORT_TERM_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_SIZE", "500"))
     MEMORY_SHORT_TERM_MIN_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
     MEMORY_COMPRESSION_RATIO = float(_cfg.get("MEMORY_COMPRESSION_RATIO", "0.3"))
+    MEMORY_SOFT_THRESHOLD_RATIO = float(_cfg.get("MEMORY_SOFT_THRESHOLD_RATIO", "0.6"))
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
     # Long-term Memory

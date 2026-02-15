@@ -1,7 +1,7 @@
 """Unit tests for WorkingMemoryCompressor."""
 
 from llm.base import LLMMessage
-from memory.compressor import WorkingMemoryCompressor
+from memory.compressor import MessageCategory, WorkingMemoryCompressor
 from memory.types import CompressionStrategy
 
 
@@ -544,3 +544,96 @@ class TestCompressionErrors:
 
         # Should fallback to sliding window
         assert result is not None
+
+
+class TestMessageClassification:
+    """Test message classification for compression priority (Step 4)."""
+
+    def test_system_message_classified_as_instruction(self):
+        """Test system messages are classified as INSTRUCTION."""
+        msg = LLMMessage(role="system", content="You are a helpful assistant.")
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.INSTRUCTION
+
+    def test_user_text_classified_as_instruction(self):
+        """Test user text messages are classified as INSTRUCTION."""
+        msg = LLMMessage(role="user", content="Hello, help me with something.")
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.INSTRUCTION
+
+    def test_user_tool_result_classified_as_fact(self):
+        """Test user messages with tool_result are classified as FACT."""
+        msg = LLMMessage(
+            role="user",
+            content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result data"}],
+        )
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.FACT
+
+    def test_tool_role_classified_as_fact(self):
+        """Test tool role messages are classified as FACT."""
+        msg = LLMMessage(role="tool", content="Tool output data", tool_call_id="t1", name="tool")
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.FACT
+
+    def test_assistant_text_classified_as_reasoning(self):
+        """Test plain assistant messages are classified as REASONING."""
+        msg = LLMMessage(role="assistant", content="Let me analyze this problem...")
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.REASONING
+
+    def test_assistant_with_tool_calls_classified_as_mixed(self):
+        """Test assistant messages with tool_calls are classified as MIXED."""
+        msg = LLMMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                {
+                    "id": "t1",
+                    "type": "function",
+                    "function": {"name": "search", "arguments": "{}"},
+                }
+            ],
+        )
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.MIXED
+
+    def test_assistant_with_legacy_tool_use_classified_as_mixed(self):
+        """Test assistant messages with legacy tool_use blocks are classified as MIXED."""
+        msg = LLMMessage(
+            role="assistant",
+            content=[
+                {"type": "text", "text": "Let me search"},
+                {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
+            ],
+        )
+        assert WorkingMemoryCompressor._classify_message(msg) == MessageCategory.MIXED
+
+    def test_facts_compressed_before_reasoning(self, mock_llm):
+        """Test that FACT messages appear before REASONING in compression priority."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        messages = [
+            LLMMessage(role="assistant", content="Let me analyze this..."),  # REASONING
+            LLMMessage(
+                role="tool", content="file contents here", tool_call_id="t1", name="read"
+            ),  # FACT
+            LLMMessage(role="user", content="Please help"),  # INSTRUCTION
+        ]
+
+        priority_list = compressor._prioritize_for_compression(messages, preserve_indices=set())
+
+        # FACT (index 1) should come before REASONING (index 0)
+        fact_pos = priority_list.index(1)
+        reasoning_pos = priority_list.index(0)
+        instruction_pos = priority_list.index(2)
+
+        assert fact_pos < reasoning_pos, "FACTs should be compressed before REASONING"
+        assert reasoning_pos < instruction_pos, "REASONING should be compressed before INSTRUCTION"
+
+    def test_format_truncates_long_fact_messages(self, mock_llm):
+        """Test that _format_messages_for_summary truncates long FACT messages."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        long_output = "x" * 1000
+        messages = [
+            LLMMessage(role="tool", content=long_output, tool_call_id="t1", name="read"),
+        ]
+
+        formatted = compressor._format_messages_for_summary(messages)
+        assert "truncated tool output" in formatted
+        assert len(formatted) < len(long_output)

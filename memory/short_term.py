@@ -1,27 +1,33 @@
-"""Short-term memory management with fixed-size window."""
+"""Short-term memory management without silent eviction."""
 
-from collections import deque
 from typing import List
 
 from llm.base import LLMMessage
 
 
 class ShortTermMemory:
-    """Manages recent messages in a fixed-size sliding window."""
+    """Manages recent messages in a growable list.
 
-    def __init__(self, max_size: int = 20):
+    Unlike the previous deque-based implementation, messages are never
+    silently evicted.  The ``max_size`` parameter serves only as an
+    emergency cap — ``is_full()`` returns True when the cap is reached,
+    signalling that compression should happen.
+    """
+
+    def __init__(self, max_size: int = 500):
         """Initialize short-term memory.
 
         Args:
-            max_size: Maximum number of messages to keep
+            max_size: Emergency cap on message count (triggers compression)
         """
         self.max_size = max_size
-        self.messages = deque(maxlen=max_size)
+        self.messages: List[LLMMessage] = []
 
     def add_message(self, message: LLMMessage) -> None:
         """Add a message to short-term memory.
 
-        Automatically evicts oldest message if at capacity.
+        Messages are never silently dropped.  Callers should check
+        ``is_full()`` and trigger compression instead.
 
         Args:
             message: LLMMessage to add
@@ -58,13 +64,16 @@ class ShortTermMemory:
         Returns:
             List of removed messages
         """
-        return [self.messages.popleft() for _ in range(min(count, len(self.messages)))]
+        count = min(count, len(self.messages))
+        removed = self.messages[:count]
+        self.messages = self.messages[count:]
+        return removed
 
     def is_full(self) -> bool:
-        """Check if short-term memory is at capacity.
+        """Check if short-term memory has reached the emergency cap.
 
         Returns:
-            True if at max capacity
+            True if at or above the emergency cap
         """
         return len(self.messages) >= self.max_size
 
@@ -84,5 +93,6 @@ class ShortTermMemory:
         Args:
             count: Number of messages to remove from the end (default: 1)
         """
-        for _ in range(min(count, len(self.messages))):
-            self.messages.pop()
+        count = min(count, len(self.messages))
+        if count > 0:
+            self.messages = self.messages[:-count]

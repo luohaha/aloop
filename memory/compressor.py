@@ -15,6 +15,15 @@ if TYPE_CHECKING:
     from llm import LiteLLMAdapter
 
 
+class MessageCategory:
+    """Categories for message classification during compression."""
+
+    INSTRUCTION = "instruction"  # system, user text requests
+    REASONING = "reasoning"  # assistant analysis/planning
+    FACT = "fact"  # tool results, tool_result blocks
+    MIXED = "mixed"  # assistant with tool_calls
+
+
 class WorkingMemoryCompressor:
     """Compresses conversation history using LLM summarization."""
 
@@ -26,18 +35,18 @@ class WorkingMemoryCompressor:
     # Prefix for summary messages to identify them
     SUMMARY_PREFIX = "[Previous conversation summary]\n"
 
-    COMPRESSION_PROMPT = """You are a memory compression system. Summarize the following conversation messages while preserving:
-1. Key decisions and outcomes
-2. Important facts, data, and findings
-3. Tool usage patterns and results
-4. User intent and goals
-5. Critical context needed for future interactions
+    COMPRESSION_PROMPT = """You are a memory compression system. Summarize the following conversation messages.
+
+Priority levels for preservation:
+- HIGH: User goals, reasoning chains, decisions, conclusions, key instructions
+- MEDIUM: Tool call patterns (which tools were used and why)
+- LOW: Raw tool output, file contents (summarize to key findings only)
 
 Original messages ({count} messages, ~{tokens} tokens):
 
 {messages}
 
-    Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
+Provide a concise but comprehensive summary. Focus on preserving high-priority information (reasoning, decisions, goals) and summarize low-priority information (raw data, tool output) to key findings only. Target length: {target_tokens} tokens."""
 
     def __init__(self, llm: "LiteLLMAdapter"):
         """Initialize compressor.
@@ -488,8 +497,80 @@ Original messages ({count} messages, ~{tokens} tokens):
             return block.get(attr)
         return getattr(block, attr, None)
 
+    @staticmethod
+    def _classify_message(msg: LLMMessage) -> str:
+        """Classify a message for compression priority.
+
+        Args:
+            msg: Message to classify
+
+        Returns:
+            MessageCategory value
+        """
+        if msg.role == "system":
+            return MessageCategory.INSTRUCTION
+
+        if msg.role == "tool":
+            return MessageCategory.FACT
+
+        if msg.role == "user":
+            # Check for tool_result blocks (legacy format)
+            if isinstance(msg.content, list):
+                for block in msg.content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        return MessageCategory.FACT
+            return MessageCategory.INSTRUCTION
+
+        if msg.role == "assistant":
+            # Check for tool_calls (new format or legacy)
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                return MessageCategory.MIXED
+            if isinstance(msg.content, list):
+                for block in msg.content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        return MessageCategory.MIXED
+            return MessageCategory.REASONING
+
+        return MessageCategory.INSTRUCTION
+
+    def _prioritize_for_compression(
+        self, messages: List[LLMMessage], preserve_indices: set[int]
+    ) -> List[int]:
+        """Return compressible message indices sorted by compression priority.
+
+        FACTs are compressed first (lowest priority to keep), then MIXED,
+        then REASONING, then INSTRUCTION (highest priority to keep).
+
+        Args:
+            messages: All messages
+            preserve_indices: Indices that must be preserved
+
+        Returns:
+            List of compressible indices, sorted by compression priority
+            (first items should be compressed first)
+        """
+        priority_order = {
+            MessageCategory.FACT: 0,
+            MessageCategory.MIXED: 1,
+            MessageCategory.REASONING: 2,
+            MessageCategory.INSTRUCTION: 3,
+        }
+
+        compressible = []
+        for i, msg in enumerate(messages):
+            if i not in preserve_indices:
+                category = self._classify_message(msg)
+                compressible.append((i, priority_order.get(category, 1)))
+
+        # Sort by priority (lower number = compress first)
+        compressible.sort(key=lambda x: x[1])
+        return [idx for idx, _ in compressible]
+
     def _format_messages_for_summary(self, messages: List[LLMMessage]) -> str:
         """Format messages for inclusion in summary prompt.
+
+        Tags messages with their category and truncates FACT messages
+        to keep the prompt focused on high-value content.
 
         Args:
             messages: Messages to format
@@ -500,8 +581,15 @@ Original messages ({count} messages, ~{tokens} tokens):
         formatted = []
         for i, msg in enumerate(messages, 1):
             role = msg.role.upper()
+            category = self._classify_message(msg)
             content = self._extract_text_content(msg)
-            formatted.append(f"[{i}] {role}: {content}")
+
+            # Truncate FACT messages (tool output) that are very long
+            if category == MessageCategory.FACT and len(content) > 500:
+                content = content[:500] + "... [truncated tool output]"
+
+            tag = f"[{category}]" if category != MessageCategory.INSTRUCTION else ""
+            formatted.append(f"[{i}] {role}{' ' + tag if tag else ''}: {content}")
 
         return "\n\n".join(formatted)
 

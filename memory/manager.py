@@ -22,6 +22,15 @@ if TYPE_CHECKING:
     from .long_term import LongTermMemoryManager
 
 
+class CompressionUrgency:
+    """Urgency levels for compression decisions."""
+
+    NONE = "none"
+    SOFT = "soft"  # 60% of hard limit → partial compression
+    HARD = "hard"  # Hard limit → full compression
+    EMERGENCY = "emergency"  # Emergency cap → full compression
+
+
 class MemoryManager:
     """Central memory management system with built-in persistence.
 
@@ -69,6 +78,10 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+
+        # API-grounded token tracking (Step 2)
+        self._last_api_context_tokens: Optional[int] = None
+        self._estimated_delta_tokens: int = 0
 
         # Optional callback to get current todo context for compression
         self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
@@ -199,27 +212,38 @@ class MemoryManager:
         # Count tokens (use actual if provided, otherwise estimate)
         if actual_tokens:
             # Use actual token counts from LLM response
-            # Note: input_tokens includes full context sent to API, not just new content
             input_tokens = actual_tokens.get("input", 0)
             output_tokens = actual_tokens.get("output", 0)
 
             self.token_tracker.add_input_tokens(input_tokens)
             self.token_tracker.add_output_tokens(output_tokens)
 
+            # API-grounded tracking: use API-reported input_tokens as authoritative
+            # context size (it includes everything sent to the API)
+            self._last_api_context_tokens = input_tokens + output_tokens
+            self._estimated_delta_tokens = 0
+
             # Log API usage separately
             logger.debug(
                 f"API usage: input={input_tokens}, output={output_tokens}, "
                 f"total={input_tokens + output_tokens}"
             )
-        # Non-API messages (user, tool results) are not tracked here — their
-        # tokens will be counted in the next API call's response.usage.input_tokens.
+        else:
+            # Non-API messages: estimate only this message's tokens and add to delta
+            provider = self.llm.provider_name.lower()
+            model = self.llm.model
+            msg_tokens = self.token_tracker.count_message_tokens(message, provider, model)
+            self._estimated_delta_tokens += msg_tokens
 
         # Add to short-term memory
         self.short_term.add_message(message)
 
-        # Recalculate current tokens based on actual stored content
-        # This gives accurate count for compression decisions
-        self.current_tokens = self._recalculate_current_tokens()
+        # Update current_tokens using grounded tracking when available
+        if self._last_api_context_tokens is not None:
+            self.current_tokens = self._last_api_context_tokens + self._estimated_delta_tokens
+        else:
+            # Fall back to full estimation (before first API call)
+            self.current_tokens = self._recalculate_current_tokens()
 
         # Log memory state (stored content size, not API usage)
         logger.debug(
@@ -230,16 +254,17 @@ class MemoryManager:
 
         # Check if compression is needed
         self.was_compressed_last_iteration = False
-        should_compress, reason = self._should_compress()
-        if should_compress:
-            logger.info(f"🗜️  Triggering compression: {reason}")
-            await self.compress()
+        urgency = self._get_compression_urgency()
+        if urgency != CompressionUrgency.NONE:
+            logger.info(f"🗜️  Triggering compression: urgency={urgency}")
+            await self.compress(urgency=urgency)
         else:
             # Log compression check details
             logger.debug(
                 f"Compression check: stored={self.current_tokens}, "
                 f"threshold={Config.MEMORY_COMPRESSION_THRESHOLD}, "
-                f"short_term_full={self.short_term.is_full()}"
+                f"soft_threshold={int(Config.MEMORY_COMPRESSION_THRESHOLD * Config.MEMORY_SOFT_THRESHOLD_RATIO)}, "
+                f"messages={self.short_term.count()}"
             )
 
     def get_context_for_llm(self) -> List[LLMMessage]:
@@ -275,7 +300,9 @@ class MemoryManager:
         """
         self._todo_context_provider = provider
 
-    async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
+    async def compress(
+        self, strategy: str = None, urgency: str = CompressionUrgency.HARD
+    ) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
         After compression, the compressed messages (including any summary as user message)
@@ -283,6 +310,7 @@ class MemoryManager:
 
         Args:
             strategy: Compression strategy (None = auto-select)
+            urgency: Compression urgency level (SOFT = partial, HARD/EMERGENCY = full)
 
         Returns:
             CompressedMemory object if compression was performed
@@ -294,6 +322,13 @@ class MemoryManager:
             logger.warning("No messages to compress")
             return None
 
+        # For SOFT urgency, only compress the oldest portion
+        if urgency == CompressionUrgency.SOFT and message_count > 4:
+            split = self._find_safe_split_point(messages)
+            if split > 0 and split < message_count:
+                return await self._compress_partial(messages, split, strategy)
+
+        # Full compression (HARD / EMERGENCY / fallback from SOFT)
         # Auto-select strategy if not specified
         if strategy is None:
             strategy = self._select_strategy(messages)
@@ -339,6 +374,10 @@ class MemoryManager:
             for msg in remaining_messages:
                 self.short_term.add_message(msg)
 
+            # Reset API-grounded tracking after compression (context has changed)
+            self._last_api_context_tokens = None
+            self._estimated_delta_tokens = 0
+
             # Update current token count
             old_tokens = self.current_tokens
             self.current_tokens = self._recalculate_current_tokens()
@@ -357,33 +396,163 @@ class MemoryManager:
             logger.error(f"Compression failed: {e}")
             return None
 
+    async def _compress_partial(
+        self,
+        messages: List[LLMMessage],
+        split: int,
+        strategy: str = None,
+    ) -> Optional[CompressedMemory]:
+        """Compress only the oldest portion of messages (soft compression).
+
+        Args:
+            messages: All messages
+            split: Index to split at (compress messages[:split], keep messages[split:])
+            strategy: Compression strategy (None = auto-select)
+
+        Returns:
+            CompressedMemory object if compression was performed
+        """
+        to_compress = messages[:split]
+        to_keep = messages[split:]
+
+        if strategy is None:
+            strategy = self._select_strategy(to_compress)
+
+        logger.info(
+            f"🗜️  Soft compression: compressing {len(to_compress)} of {len(messages)} messages "
+            f"(keeping {len(to_keep)}), strategy={strategy}"
+        )
+
+        try:
+            todo_context = None
+            if self._todo_context_provider:
+                todo_context = self._todo_context_provider()
+
+            async with AsyncSpinner(terminal_ui.console, "Compressing memory (partial)..."):
+                compressed = await self.compressor.compress(
+                    to_compress,
+                    strategy=strategy,
+                    target_tokens=self._calculate_target_tokens(),
+                    todo_context=todo_context,
+                )
+
+            self.compression_count += 1
+            self.was_compressed_last_iteration = True
+            self.last_compression_savings = compressed.token_savings
+
+            self.token_tracker.add_compression_savings(compressed.token_savings)
+            self.token_tracker.add_compression_cost(compressed.compressed_tokens)
+
+            # Remove the compressed portion from short-term
+            self.short_term.remove_first(len(messages))
+
+            # Get any remaining messages (added during compression)
+            extra = self.short_term.get_messages()
+            self.short_term.clear()
+
+            # Rebuild: compressed summary + kept messages + any extras
+            for msg in compressed.messages:
+                self.short_term.add_message(msg)
+            for msg in to_keep:
+                self.short_term.add_message(msg)
+            for msg in extra:
+                self.short_term.add_message(msg)
+
+            # Reset API-grounded tracking after compression
+            self._last_api_context_tokens = None
+            self._estimated_delta_tokens = 0
+
+            old_tokens = self.current_tokens
+            self.current_tokens = self._recalculate_current_tokens()
+
+            logger.info(
+                f"✅ Soft compression complete: {compressed.original_tokens} → {compressed.compressed_tokens} tokens "
+                f"({compressed.savings_percentage:.1f}% saved), "
+                f"context: {old_tokens} → {self.current_tokens} tokens, "
+                f"short_term now has {self.short_term.count()} messages"
+            )
+
+            return compressed
+
+        except Exception as e:
+            logger.error(f"Partial compression failed: {e}")
+            return None
+
+    def _find_safe_split_point(self, messages: List[LLMMessage]) -> int:
+        """Find a safe split point near the midpoint that doesn't break tool pairs.
+
+        Args:
+            messages: Messages to split
+
+        Returns:
+            Index to split at (compress messages[:index], keep messages[index:])
+        """
+        target = len(messages) // 2
+        if target <= 0:
+            return 0
+
+        # Find tool pairs to know which indices must stay together
+        tool_pairs, orphaned = self.compressor._find_tool_pairs(messages)
+
+        # Build set of indices that are part of tool pairs
+        pair_boundaries: set[int] = set()
+        for assistant_idx, response_idx in tool_pairs:
+            pair_boundaries.add(assistant_idx)
+            pair_boundaries.add(response_idx)
+
+        # Scan backward from target to find a split that doesn't break pairs
+        for candidate in range(target, 0, -1):
+            # Check: no pair spans the boundary (one index < candidate, another >= candidate)
+            safe = True
+            for assistant_idx, response_idx in tool_pairs:
+                if assistant_idx < candidate <= response_idx:
+                    safe = False
+                    break
+                if response_idx < candidate <= assistant_idx:
+                    safe = False
+                    break
+            if safe:
+                return candidate
+
+        # No safe split found near midpoint, fall back to compressing everything
+        return 0
+
+    def _get_compression_urgency(self) -> str:
+        """Determine compression urgency level.
+
+        Returns:
+            CompressionUrgency level
+        """
+        if not Config.MEMORY_ENABLED:
+            return CompressionUrgency.NONE
+
+        # Emergency: message count safety net
+        if self.short_term.is_full():
+            return CompressionUrgency.EMERGENCY
+
+        # Hard limit: must compress
+        if self.current_tokens > Config.MEMORY_COMPRESSION_THRESHOLD:
+            return CompressionUrgency.HARD
+
+        # Soft threshold: partial compression
+        soft_threshold = int(
+            Config.MEMORY_COMPRESSION_THRESHOLD * Config.MEMORY_SOFT_THRESHOLD_RATIO
+        )
+        if self.current_tokens > soft_threshold:
+            return CompressionUrgency.SOFT
+
+        return CompressionUrgency.NONE
+
     def _should_compress(self) -> tuple[bool, Optional[str]]:
         """Check if compression should be triggered.
 
         Returns:
             Tuple of (should_compress, reason)
         """
-        if not Config.MEMORY_ENABLED:
-            return False, "compression_disabled"
-
-        # Hard limit: must compress
-        if self.current_tokens > Config.MEMORY_COMPRESSION_THRESHOLD:
-            return (
-                True,
-                f"hard_limit ({self.current_tokens} > {Config.MEMORY_COMPRESSION_THRESHOLD})",
-            )
-
-        # CRITICAL: Compress when short-term memory is full to prevent eviction
-        # If we don't compress, the next message will cause deque to evict the oldest message,
-        # which may break tool_use/tool_result pairs
-        if self.short_term.is_full():
-            return (
-                True,
-                f"short_term_full ({self.short_term.count()}/{Config.MEMORY_SHORT_TERM_SIZE} messages, "
-                f"current tokens: {self.current_tokens})",
-            )
-
-        return False, None
+        urgency = self._get_compression_urgency()
+        if urgency == CompressionUrgency.NONE:
+            return False, None
+        return True, f"urgency={urgency}"
 
     def _select_strategy(self, messages: List[LLMMessage]) -> str:
         """Auto-select compression strategy based on message characteristics.
@@ -517,6 +686,8 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+        self._last_api_context_tokens = None
+        self._estimated_delta_tokens = 0
 
     def rollback_incomplete_exchange(self) -> None:
         """Rollback the last incomplete assistant response with tool_calls.

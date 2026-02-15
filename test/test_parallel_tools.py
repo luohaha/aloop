@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from agent.tool_executor import ToolExecutor
 from llm import ToolCall, ToolResult
 from tools.base import BaseTool
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -171,9 +170,7 @@ async def test_all_readonly_runs_parallel(mock_tui):
     tcs = [_make_tool_call("a", "1"), _make_tool_call("b", "2")]
 
     # Check that the decision logic picks parallel
-    all_readonly = len(tcs) > 1 and all(
-        agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs
-    )
+    all_readonly = len(tcs) > 1 and all(agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is True
 
 
@@ -186,9 +183,7 @@ async def test_mixed_tools_runs_sequential(mock_tui):
 
     tcs = [_make_tool_call("a"), _make_tool_call("b")]
 
-    all_readonly = len(tcs) > 1 and all(
-        agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs
-    )
+    all_readonly = len(tcs) > 1 and all(agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is False
 
 
@@ -201,9 +196,7 @@ async def test_single_tool_runs_sequential(mock_tui):
 
     tcs = [_make_tool_call("a")]
 
-    all_readonly = len(tcs) > 1 and all(
-        agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs
-    )
+    all_readonly = len(tcs) > 1 and all(agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is False
 
 
