@@ -114,6 +114,10 @@ class InputArea(Widget):
         self.placeholder = placeholder
         self._completion_prefix = ""
         self._completion_type = ""  # "file" or "command"
+        # Input history
+        self._history: List[str] = []
+        self._history_index = -1  # -1 means not browsing history
+        self._saved_input = ""  # saves current input when entering history
 
     def compose(self) -> ComposeResult:
         with Container(id="completion-container"):
@@ -154,6 +158,12 @@ class InputArea(Widget):
         if not value:
             return
 
+        # Record in history
+        if not self._history or self._history[-1] != value:
+            self._history.append(value)
+        self._history_index = -1
+        self._saved_input = ""
+
         # Clear input
         self.query_one("#main-input", Input).value = ""
         self._hide_completions()
@@ -166,6 +176,44 @@ class InputArea(Widget):
             self.post_message(self.CommandSubmitted(command, args))
         else:
             self.post_message(self.Submitted(value))
+
+    def on_key(self, event) -> None:
+        """Handle key events for history navigation."""
+        if event.key == "up":
+            if self.show_completions:
+                # Let OptionList handle navigation
+                return
+            if not self._history:
+                event.prevent_default()
+                event.stop()
+                return
+            if self._history_index == -1:
+                # Entering history mode — save current input
+                self._saved_input = self.query_one("#main-input", Input).value
+                self._history_index = len(self._history) - 1
+            elif self._history_index > 0:
+                self._history_index -= 1
+            else:
+                event.prevent_default()
+                event.stop()
+                return
+            self.query_one("#main-input", Input).value = self._history[self._history_index]
+            event.prevent_default()
+            event.stop()
+        elif event.key == "down":
+            if self.show_completions:
+                return
+            if self._history_index == -1:
+                return
+            if self._history_index < len(self._history) - 1:
+                self._history_index += 1
+                self.query_one("#main-input", Input).value = self._history[self._history_index]
+            else:
+                # Back to current input
+                self._history_index = -1
+                self.query_one("#main-input", Input).value = self._saved_input
+            event.prevent_default()
+            event.stop()
 
     @on(OptionList.OptionSelected, "#completion-list")
     def handle_completion_selected(self, event: OptionList.OptionSelected) -> None:
