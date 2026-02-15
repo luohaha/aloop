@@ -232,13 +232,14 @@ class PTK2Driver:
         # invalidating/redrawing the full PTK layout for every small chunk.
         #
         # This matters most for streaming output (many tiny writes).
-        flush_ms = os.environ.get("PTK2_FLUSH_MS", "16")
+        flush_ms = os.environ.get("PTK2_FLUSH_MS", "8")
         try:
             self._flush_interval_s = max(0.0, float(flush_ms) / 1000.0)
         except ValueError:
-            self._flush_interval_s = 0.016
+            self._flush_interval_s = 0.008
         self._pending_raw = ""
         self._flush_handle: asyncio.Handle | None = None
+        self._last_flush_ts = 0.0
         self._capture_path = os.environ.get("PTK2_CAPTURE_PATH")
         self._capture_fp: IO[str] | None = None
         self._debug_path = os.environ.get("PTK2_DEBUG_PATH")
@@ -581,7 +582,12 @@ class PTK2Driver:
             # Flush synchronously when coalescing is disabled.
             self._flush_pending()
             return
-        self._flush_handle = self._loop.call_later(self._flush_interval_s, self._flush_pending)
+        now = time.monotonic()
+        due_in = self._flush_interval_s - (now - self._last_flush_ts)
+        if due_in <= 0:
+            self._flush_handle = self._loop.call_soon(self._flush_pending)
+        else:
+            self._flush_handle = self._loop.call_later(due_in, self._flush_pending)
 
     def _enqueue_output(self, chunk: str) -> None:
         if not chunk:
@@ -594,6 +600,7 @@ class PTK2Driver:
         self._flush_handle = None
         if not self._pending_raw and not self._raw_ansi_carry:
             return
+        self._last_flush_ts = time.monotonic()
 
         raw = self._raw_ansi_carry + self._pending_raw
         self._pending_raw = ""
@@ -623,6 +630,9 @@ class PTK2Driver:
             f"manual={self._manual_scroll_mode} vscroll={self.output_window.vertical_scroll} "
             f"max_scroll={self._max_output_scroll()}"
         )
+        # If more output arrived while we were flushing, schedule the next flush.
+        if self._pending_raw or self._raw_ansi_carry:
+            self._schedule_flush()
 
     def _on_stream_text(self, text: str) -> None:
         if not text or self._loop is None:
