@@ -96,6 +96,8 @@ class HelpScreen(ModalScreen[None]):
                 ("/model [id]", "Show or switch models"),
                 ("/verbose", "Toggle thinking display"),
                 ("/resume <id>", "Resume a saved session"),
+                ("/login [provider]", "Login to OAuth provider"),
+                ("/logout [provider]", "Logout from OAuth provider"),
                 ("/exit", "Exit aloop"),
             ]
 

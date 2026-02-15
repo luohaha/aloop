@@ -227,6 +227,10 @@ class ChatScreen(Screen):
             self._handle_theme_command()
         elif command == "/resume":
             self._handle_resume_command(args)
+        elif command == "/login":
+            self._handle_login_command(args)
+        elif command == "/logout":
+            self._handle_logout_command(args)
         else:
             panel = self.query_one(MessagePanel)
             panel.add_assistant_message(
@@ -472,6 +476,152 @@ class ChatScreen(Screen):
                 loop.close()
 
         do_resume(self)
+
+    def _handle_login_command(self, args: List[str]) -> None:
+        """Handle /login command - login to OAuth provider."""
+        panel = self.query_one(MessagePanel)
+
+        @work(thread=True, exit_on_error=False)
+        async def do_login(self_ref: "ChatScreen") -> None:
+            from llm.chatgpt_auth import (
+                get_all_auth_provider_statuses,
+                get_supported_auth_providers,
+                is_auth_status_logged_in,
+                login_auth_provider,
+            )
+            from llm.oauth_model_sync import sync_oauth_models
+
+            loop = asyncio.new_event_loop()
+            try:
+                # Determine provider
+                providers = get_supported_auth_providers()
+                if args:
+                    provider = args[0]
+                    if provider not in providers:
+                        self_ref.app.call_from_thread(
+                            panel.add_assistant_message,
+                            content=f"Unknown provider `{provider}`. Available: {', '.join(providers)}",
+                        )
+                        return
+                else:
+                    # Check status and pick first available
+                    statuses = loop.run_until_complete(get_all_auth_provider_statuses())
+                    available = [
+                        p
+                        for p in providers
+                        if not (statuses.get(p) and is_auth_status_logged_in(statuses[p]))
+                    ]
+                    if not available:
+                        self_ref.app.call_from_thread(
+                            panel.add_assistant_message,
+                            content="All OAuth providers already logged in.",
+                        )
+                        return
+                    provider = available[0]
+
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message,
+                    content=f"Starting **{provider}** login flow...",
+                )
+
+                status = loop.run_until_complete(login_auth_provider(provider))
+
+                model_manager = getattr(self_ref.agent, "model_manager", None)
+                added_msg = ""
+                if model_manager:
+                    added = sync_oauth_models(model_manager, provider)
+                    if added:
+                        added_msg = f" Added {len(added)} models."
+
+                lines = [f"**{provider}** login completed.{added_msg}"]
+                if status.auth_file:
+                    lines.append(f"Auth file: `{status.auth_file}`")
+                if status.account_id:
+                    lines.append(f"Account: `{status.account_id}`")
+                lines.append("Use `/model` to pick the active model.")
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message, content="\n\n".join(lines)
+                )
+            except Exception as e:
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message, content=f"**Login error:** {e}"
+                )
+            finally:
+                loop.close()
+
+        do_login(self)
+
+    def _handle_logout_command(self, args: List[str]) -> None:
+        """Handle /logout command - logout from OAuth provider."""
+        panel = self.query_one(MessagePanel)
+
+        @work(thread=True, exit_on_error=False)
+        async def do_logout(self_ref: "ChatScreen") -> None:
+            from llm.chatgpt_auth import (
+                get_all_auth_provider_statuses,
+                get_supported_auth_providers,
+                is_auth_status_logged_in,
+                logout_auth_provider,
+            )
+            from llm.oauth_model_sync import remove_oauth_models
+
+            loop = asyncio.new_event_loop()
+            try:
+                providers = get_supported_auth_providers()
+                if args:
+                    provider = args[0]
+                    if provider not in providers:
+                        self_ref.app.call_from_thread(
+                            panel.add_assistant_message,
+                            content=f"Unknown provider `{provider}`. Available: {', '.join(providers)}",
+                        )
+                        return
+                else:
+                    # Pick first logged-in provider
+                    statuses = loop.run_until_complete(get_all_auth_provider_statuses())
+                    logged_in = [
+                        p
+                        for p in providers
+                        if statuses.get(p) and is_auth_status_logged_in(statuses[p])
+                    ]
+                    if not logged_in:
+                        self_ref.app.call_from_thread(
+                            panel.add_assistant_message,
+                            content="No OAuth providers currently logged in.",
+                        )
+                        return
+                    provider = logged_in[0]
+
+                removed = loop.run_until_complete(logout_auth_provider(provider))
+
+                model_manager = getattr(self_ref.agent, "model_manager", None)
+                removed_msg = ""
+                if model_manager:
+                    removed_models = remove_oauth_models(model_manager, provider)
+                    if removed_models:
+                        removed_msg = f" Removed {len(removed_models)} managed models."
+                    current_after = model_manager.get_current_model()
+                    if current_after:
+                        self_ref.agent.switch_model(current_after.model_id)
+
+                if removed:
+                    self_ref.app.call_from_thread(
+                        panel.add_assistant_message,
+                        content=f"Logged out from **{provider}**.{removed_msg}",
+                    )
+                else:
+                    self_ref.app.call_from_thread(
+                        panel.add_assistant_message,
+                        content=f"No **{provider}** login state found.",
+                    )
+            except Exception as e:
+                self_ref.app.call_from_thread(
+                    panel.add_assistant_message, content=f"**Logout error:** {e}"
+                )
+            finally:
+                loop.close()
+
+        do_logout(self)
 
     def action_show_help(self) -> None:
         self.app.push_screen(HelpScreen())
