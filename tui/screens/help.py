@@ -72,9 +72,12 @@ class HelpScreen(ModalScreen[None]):
 
             shortcuts = [
                 ("Enter", "Send message"),
+                ("Ctrl+C", "Cancel current task / Exit"),
                 ("Ctrl+D", "Exit ouro"),
                 ("Ctrl+L", "Clear screen"),
-                ("Escape", "Cancel / Close"),
+                ("Ctrl+T", "Toggle thinking display"),
+                ("Ctrl+S", "Show quick stats"),
+                ("Escape", "Cancel current task"),
                 ("F1 / ?", "Show this help"),
                 ("\u2191 / \u2193", "Navigate history / completions"),
                 ("Tab", "Accept completion"),

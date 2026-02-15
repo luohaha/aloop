@@ -21,7 +21,7 @@ class OuroTUI(App):
 
     BINDINGS = [
         ("ctrl+d", "quit", "Exit"),
-        ("ctrl+c", "quit", "Exit"),
+        ("ctrl+c", "cancel_or_quit", "Cancel / Exit"),
     ]
 
     def __init__(
@@ -56,6 +56,14 @@ class OuroTUI(App):
     def action_quit(self) -> None:
         """Exit the application."""
         self.exit()
+
+    def action_cancel_or_quit(self) -> None:
+        """Cancel current operation, or exit if idle."""
+        screen = self.screen
+        if hasattr(screen, "_is_processing") and screen._is_processing:
+            screen.action_cancel()  # type: ignore[attr-defined]
+        else:
+            self.exit()
 
 
 async def run_tui_mode(agent: "BaseAgent") -> None:

@@ -23,6 +23,8 @@ class ChatScreen(Screen):
         ("f1", "show_help", "Help"),
         ("ctrl+l", "clear_screen", "Clear"),
         ("ctrl+d", "quit_app", "Exit"),
+        ("ctrl+t", "toggle_thinking", "Toggle Thinking"),
+        ("ctrl+s", "show_stats", "Show Stats"),
         ("escape", "cancel", "Cancel"),
         ("pageup", "scroll_up", "Scroll Up"),
         ("pagedown", "scroll_down", "Scroll Down"),
@@ -86,6 +88,7 @@ class ChatScreen(Screen):
         self._pending_events: List[Any] = []
         self._current_iteration = 0
         self._current_tool_id = ""
+        self._skills_registry: Any = None
 
     def compose(self) -> ComposeResult:
         yield Header(model=self.model, mode=self.mode)
@@ -110,6 +113,9 @@ class ChatScreen(Screen):
 
         # Set up a timer to process pending events
         self.set_interval(0.05, self._process_pending_events)
+
+        # Load skills registry in background
+        self._load_skills()
 
     def on_unmount(self) -> None:
         """Clean up when screen is removed."""
@@ -266,13 +272,42 @@ class ChatScreen(Screen):
         # Run agent
         self._current_worker = self._run_agent(message)
 
+    @work(thread=True, exit_on_error=False)
+    def _load_skills(self) -> None:
+        """Load skills registry in background."""
+        from agent.skills import SkillsRegistry, render_skills_section
+
+        loop = asyncio.new_event_loop()
+        try:
+            registry = SkillsRegistry()
+            loop.run_until_complete(registry.load())
+            self._skills_registry = registry
+            # Inject skills section into agent's system prompt
+            skills_section = render_skills_section(list(registry.skills.values()))
+            if hasattr(self.agent, "set_skills_section"):
+                self.agent.set_skills_section(skills_section)
+        except Exception:
+            pass  # Skills are optional
+        finally:
+            loop.close()
+
     @work(exclusive=True, thread=True, exit_on_error=False)
     def _run_agent(self, message: str) -> str:
         """Run agent in background thread."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result: str = loop.run_until_complete(self.agent.run(message))  # type: ignore[arg-type]
+            # Resolve skill invocations if registry is loaded
+            resolved_message = message
+            if self._skills_registry:
+                try:
+                    resolved = loop.run_until_complete(
+                        self._skills_registry.resolve_user_input(message)
+                    )
+                    resolved_message = resolved.rendered
+                except Exception:
+                    pass
+            result: str = loop.run_until_complete(self.agent.run(resolved_message, verify=False))  # type: ignore[arg-type, call-arg]
             return result
         finally:
             loop.close()
@@ -289,6 +324,8 @@ class ChatScreen(Screen):
 
         if worker.is_cancelled:
             panel.update_streaming_content("*Cancelled*", is_complete=True)
+            # Rollback incomplete exchange to prevent API errors on next turn
+            self.agent.memory.rollback_incomplete_exchange()
         elif worker.state.name == "ERROR":
             panel.update_streaming_content(f"**Error:** {worker.error}", is_complete=True)
         else:
@@ -637,6 +674,19 @@ class ChatScreen(Screen):
 
     def action_quit_app(self) -> None:
         self.app.exit()
+
+    def action_toggle_thinking(self) -> None:
+        """Toggle verbose thinking display (Ctrl+T)."""
+        from config import Config
+
+        Config.TUI_SHOW_THINKING = not Config.TUI_SHOW_THINKING
+        status = "enabled" if Config.TUI_SHOW_THINKING else "disabled"
+        panel = self.query_one(MessagePanel)
+        panel.add_assistant_message(content=f"Thinking display **{status}**.")
+
+    def action_show_stats(self) -> None:
+        """Show quick stats (Ctrl+S)."""
+        self._handle_stats_command()
 
     def action_cancel(self) -> None:
         if self._is_processing and self._current_worker:
