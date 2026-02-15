@@ -176,7 +176,9 @@ def summarize(samples: list[float]) -> str:
     )
 
 
-def run_once(mode: str, *, chunks: int, chunk_size: int, delay_ms: float) -> tuple[float, float] | None:
+def run_once(
+    mode: str, *, chunks: int, chunk_size: int, delay_ms: float
+) -> tuple[float, float] | None:
     session = PtySession(mode)
     ok = False
     wall_s: float | None = None

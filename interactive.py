@@ -429,9 +429,7 @@ class InteractiveSession:
             i = -1
             for i in range(chunks):
                 # Alternate colors to stress SGR parsing paths.
-                sgr = (
-                    "\x1b[38;2;0;217;255m" if i % 2 == 0 else "\x1b[38;2;167;139;250m"
-                )
+                sgr = "\x1b[38;2;0;217;255m" if i % 2 == 0 else "\x1b[38;2;167;139;250m"
                 payload = ("0123456789abcdef" * ((chunk_size // 16) + 1))[:chunk_size]
                 out.write(f"{sgr}{i:05d} {payload}\x1b[0m\n")
                 if delay_ms:

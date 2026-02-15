@@ -285,7 +285,9 @@ class PTK2Driver:
         self._orig_prompt_async = session.input_handler.prompt_async
         self._orig_async_spinner = agent_base_module.AsyncSpinner
 
-        self._output_control = _OutputAnsiControl(self._render_output, self._scroll_output, _output_cursor_pos)
+        self._output_control = _OutputAnsiControl(
+            self._render_output, self._scroll_output, _output_cursor_pos
+        )
         self.output_window = Window(
             content=self._output_control,
             wrap_lines=True,
@@ -703,9 +705,7 @@ class PTK2Driver:
         if limit is None:
             chunk, rest = to_flush, ""
         else:
-            chunk, rest = split_visible_prefix_preserving_sgr(
-                to_flush, limit
-            )
+            chunk, rest = split_visible_prefix_preserving_sgr(to_flush, limit)
         self._pending_norm = rest
         if not chunk:
             return
