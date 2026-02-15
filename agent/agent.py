@@ -141,26 +141,7 @@ Assistant: [Immediately starts modifying code without checking AGENTS.md]
 NOTE: AGENTS.md is optional. If not found, proceed normally with general best practices.
 </agents_md>
 
-<complex_task_strategy>
-For complex tasks, combine tools to achieve an explore-plan-execute workflow:
-
-1. **EXPLORE**: Gather context before acting
-   - Use explore_context for parallel information gathering (code structure, web research)
-
-2. **PLAN**: Structure your approach
-   - Use manage_todo_list to break down the task into trackable steps
-   - Identify dependencies between steps
-
-3. **EXECUTE**: Carry out the plan
-   - Use parallel_execute for multiple independent/semi-dependent tasks
-   - Use regular tools for simple sequential operations
-
-When to use each approach:
-- Simple task (1-2 steps) → Use tools directly
-- Medium task (3-5 steps) → Use todo list + sequential execution
-- Complex task (needs research) → Explore → Plan → Execute
-- Parallel workload → parallel_execute
-</complex_task_strategy>"""
+"""
 
     async def run(self, task: str, verify: bool = False) -> str:
         """Execute ReAct loop until task is complete.
