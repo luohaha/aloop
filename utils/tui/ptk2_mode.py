@@ -5,16 +5,27 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import os
 import re
+import time
 from collections.abc import Callable
 from typing import IO, cast
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.application.current import get_app
 from prompt_toolkit.completion import CompleteEvent
-from prompt_toolkit.document import Document
+from prompt_toolkit.data_structures import Point
+from prompt_toolkit.filters import Condition
+from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.containers import ConditionalContainer
+from prompt_toolkit.layout.controls import FormattedTextControl, UIContent
+from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.layout.margins import ScrollbarMargin
+from prompt_toolkit.layout.menus import CompletionsMenuControl
+from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 from rich.console import Console
@@ -26,6 +37,8 @@ from utils.tui.theme import Theme
 
 _ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _ANSI_OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
+_ANSI_NON_SGR_CSI_RE = re.compile(r"\x1b\[(?![0-9;]*m)[0-9;?]*[ -/]*[@-~]")
+_SGR_START = "\x1b["
 
 
 def strip_ansi(text: str) -> str:
@@ -35,13 +48,84 @@ def strip_ansi(text: str) -> str:
 
 
 def normalize_output_chunk(text: str) -> str:
-    """Normalize captured terminal output before rendering in PTK output pane."""
-    cleaned = strip_ansi(text)
+    """Normalize captured output for PTK rendering.
+
+    Keep SGR color escapes (`...m`) so ANSI rendering can preserve colors,
+    while removing OSC and non-SGR control CSI escapes.
+    """
+    cleaned = _ANSI_OSC_RE.sub("", text)
+    cleaned = _ANSI_NON_SGR_CSI_RE.sub("", cleaned)
     cleaned = cleaned.replace("\r\n", "\n")
     cleaned = cleaned.replace("\r", "\n")
-    # Backspace control chars from prompt redraws are noise in the output pane.
     cleaned = cleaned.replace("\x08", "")
     return cleaned
+
+
+def split_incomplete_ansi_suffix(text: str) -> tuple[str, str]:
+    """Split out a trailing *incomplete* ANSI escape (CSI/OSC).
+
+    This is used to avoid leaking partial escape sequences into the output pane.
+    It also allows `normalize_output_chunk()` to strip OSC/non-SGR CSI once the
+    sequence is complete.
+    """
+    if not text:
+        return "", ""
+
+    esc = text.rfind("\x1b")
+    if esc == -1:
+        return text, ""
+
+    suffix = text[esc:]
+    if suffix == "\x1b":
+        return text[:esc], suffix
+
+    # OSC: ESC ] ... (BEL | ST)
+    if suffix.startswith("\x1b]"):
+        if "\x07" not in suffix and "\x1b\\" not in suffix:
+            return text[:esc], suffix
+        return text, ""
+
+    # CSI: ESC [ ... final byte in '@'..'~'
+    if suffix.startswith("\x1b["):
+        for ch in suffix[2:]:
+            if "@" <= ch <= "~":
+                return text, ""
+        return text[:esc], suffix
+
+    # Other escape: if it ends right after ESC, carry.
+    if len(suffix) == 1:
+        return text[:esc], suffix
+
+    return text, ""
+
+
+def drop_visible_prefix_preserving_sgr(text: str, visible_chars: int) -> str:
+    """Drop N visible characters from the start, skipping full SGR escapes.
+
+    Visible characters include newlines; SGR escapes don't count.
+    """
+    if visible_chars <= 0 or not text:
+        return text
+
+    i = 0
+    remaining = visible_chars
+    n = len(text)
+
+    while i < n and remaining > 0:
+        if text.startswith(_SGR_START, i):
+            end = text.find("m", i + 2)
+            if end == -1:
+                # Incomplete escape; treat the ESC as visible to guarantee progress.
+                i += 1
+                remaining -= 1
+                continue
+            i = end + 1
+            continue
+
+        i += 1
+        remaining -= 1
+
+    return text[i:]
 
 
 def next_follow_tail_state(current_follow_tail: bool, scroll_delta: int, at_bottom: bool) -> bool:
@@ -73,12 +157,7 @@ class _OutputStream(io.TextIOBase):
 
 
 class _PTK2AsyncSpinner:
-    """Non-live spinner shim for PTK2 output capture.
-
-    Rich Live spinner frames don't map well into a text output pane. This shim keeps
-    the same context-manager API, but emits a single thinking block instead of
-    continuously repainting frames.
-    """
+    """Non-live spinner shim for PTK2 output capture."""
 
     def __init__(self, console: Console, message: str = "Processing...") -> None:
         self.console = console
@@ -96,6 +175,46 @@ class _PTK2AsyncSpinner:
         self.message = message
 
 
+class _OutputAnsiControl(FormattedTextControl):
+    def __init__(self, get_text, on_scroll, get_cursor_pos):  # noqa: ANN001
+        # Keep output unfocusable so we don't steal focus from the input buffer.
+        # (The completion menu logic depends on the current buffer.)
+        super().__init__(text=get_text, focusable=False, show_cursor=False)
+        self._on_scroll = on_scroll
+        self._get_cursor_pos = get_cursor_pos
+
+    def mouse_handler(self, mouse_event: MouseEvent):  # noqa: ANN001
+        if mouse_event.event_type == MouseEventType.SCROLL_UP:
+            self._on_scroll(-4, "mouse")
+            return None
+        if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+            self._on_scroll(4, "mouse")
+            return None
+        return NotImplemented
+
+    def create_content(self, width: int, height: int | None) -> UIContent:
+        # Default FormattedTextControl has cursor at (0,0), which makes `Window`
+        # with `wrap_lines=True` clamp the scroll position to the top.
+        #
+        # We provide a dynamic cursor:
+        # - LIVE mode: last line, so the viewport follows tail naturally.
+        # - SCROLL mode: current vertical_scroll, so manual scrolling sticks.
+        content = super().create_content(width, height)
+        if content.line_count <= 0:
+            return content
+
+        pos = self._get_cursor_pos(content.line_count)
+        y = max(0, min(pos.y, content.line_count - 1))
+        x = max(0, pos.x)
+        return UIContent(
+            get_line=content.get_line,
+            line_count=content.line_count,
+            cursor_position=Point(x=x, y=y),
+            menu_position=content.menu_position,
+            show_cursor=False,
+        )
+
+
 class PTK2Driver:
     """Single-renderer PTK application that hosts the interactive session."""
 
@@ -105,7 +224,32 @@ class PTK2Driver:
         self._input_queue: asyncio.Queue[str] = asyncio.Queue()
         self._prompt_text = "> "
         self._max_output_chars = 200_000
-        self._follow_output_tail = True
+        self._manual_scroll_mode = False
+        self._output_text = ""
+        self._plain_tail_line_len = 0
+        self._raw_ansi_carry = ""
+        self._capture_path = os.environ.get("PTK2_CAPTURE_PATH")
+        self._capture_fp: IO[str] | None = None
+        self._debug_path = os.environ.get("PTK2_DEBUG_PATH")
+        self._debug_fp: IO[str] | None = None
+
+        def _output_cursor_y(line_count: int) -> int:
+            if line_count <= 0:
+                return 0
+            # In SCROLL mode, pin cursor to the current top line to prevent PTK
+            # from snapping the viewport back to the bottom.
+            if self._manual_scroll_mode:
+                return min(self.output_window.vertical_scroll, line_count - 1)
+            return line_count - 1
+
+        def _output_cursor_pos(line_count: int) -> Point:
+            y = _output_cursor_y(line_count)
+            # In LIVE mode, put cursor at the end of the tail line. This makes
+            # `wrap_lines=True` follow the true tail (including wrapped rows)
+            # without relying on a huge `vertical_scroll` sentinel, which can
+            # break scrolling responsiveness.
+            x = 0 if self._manual_scroll_mode else max(0, self._plain_tail_line_len)
+            return Point(x=x, y=y)
 
         # Hooks to restore after run.
         self._orig_status_update = session.status_bar.update
@@ -113,33 +257,27 @@ class PTK2Driver:
         self._orig_prompt_async = session.input_handler.prompt_async
         self._orig_async_spinner = agent_base_module.AsyncSpinner
 
-        self.output_area = TextArea(
-            text="",
-            multiline=True,
+        self._output_control = _OutputAnsiControl(self._render_output, self._scroll_output, _output_cursor_pos)
+        self.output_window = Window(
+            content=self._output_control,
             wrap_lines=True,
-            read_only=True,
-            scrollbar=True,
-            focusable=True,
-            focus_on_click=True,
+            right_margins=[ScrollbarMargin(display_arrows=True)],
             style="class:output",
         )
 
         self.input_area = TextArea(
             multiline=False,
             completer=session.input_handler.completer,
-            # Keep menu responsive while typing slash commands.
             complete_while_typing=True,
             style="class:input",
             accept_handler=self._accept_input,
         )
 
-        self._prev_input_text = ""
         self._last_completion_sync_text: str | None = None
         self._wire_slash_completion_sync()
 
         self._status_control = FormattedTextControl(self._render_status_line)
         self._prompt_control = FormattedTextControl(self._render_prompt)
-        self._command_hint_control = FormattedTextControl(self._render_command_hint)
 
         input_row = VSplit(
             [
@@ -148,12 +286,56 @@ class PTK2Driver:
             ]
         )
 
+        # Drop-down completion menu that appears *below* the input row (not as a float),
+        # preventing overlays on the output/status bar and matching legacy UX.
+        self._completion_visible = Condition(
+            lambda: (
+                self.input_area.buffer.complete_state is not None
+                and bool(self.input_area.buffer.complete_state.completions)
+            )
+        )
+
+        completion_border_top = Window(height=1, char="─", style="class:completion.border")
+        completion_border_bottom = Window(height=1, char="─", style="class:completion.border")
+
+        self._completion_count_control = FormattedTextControl(self._render_completion_count)
+        completion_count = Window(
+            height=1,
+            content=self._completion_count_control,
+            style="class:completion.count",
+        )
+
+        completion_list = Window(
+            content=CompletionsMenuControl(),
+            # Keep the completion dropdown usable in small terminals: preserve
+            # at least a few rows for output.
+            height=lambda: Dimension(  # noqa: E731
+                min=1,
+                max=max(1, min(8, get_app().output.get_size().rows - 9)),
+            ),
+            right_margins=[ScrollbarMargin(display_arrows=True)],
+            dont_extend_width=False,
+            style="class:completion-menu",
+        )
+
+        completion_box = ConditionalContainer(
+            content=HSplit(
+                [
+                    completion_border_top,
+                    completion_list,
+                    completion_count,
+                    completion_border_bottom,
+                ]
+            ),
+            filter=self._completion_visible,
+        )
+
         root = HSplit(
             [
-                self.output_area,
+                self.output_window,
                 Window(height=1, char="─", style="class:divider"),
                 input_row,
-                Window(height=1, content=self._command_hint_control, style="class:hint"),
+                completion_box,
                 Window(height=1, content=self._status_control, style="class:status"),
             ]
         )
@@ -172,19 +354,18 @@ class PTK2Driver:
         kb = KeyBindings()
 
         @kb.add("escape")
-        def _escape(event) -> None:
+        def _escape(_event) -> None:
             buf = self.input_area.buffer
             if buf.complete_state is not None:
                 buf.cancel_completion()
 
         @kb.add("c-l")
         def _clear(_event) -> None:
-            self._follow_output_tail = True
+            self._manual_scroll_mode = False
             self._set_output_text("", follow_tail=True)
 
         @kb.add("c-c")
         def _interrupt(_event) -> None:
-            # Match existing semantics: cancel running task, otherwise exit.
             current_task = self.session.current_task
             if current_task and not current_task.done():
                 current_task.cancel()
@@ -193,29 +374,29 @@ class PTK2Driver:
 
         @kb.add("pageup")
         def _page_up(_event) -> None:
-            self._scroll_output(-12)
+            self._scroll_output(-12, "key:pageup")
 
         @kb.add("pagedown")
         def _page_down(_event) -> None:
-            self._scroll_output(12)
+            self._scroll_output(12, "key:pagedown")
 
-        @kb.add("<scroll-up>")
+        @kb.add(Keys.ScrollUp)
         def _scroll_up(_event) -> None:
-            self._scroll_output(-4)
+            self._scroll_output(-4, "key:scrollup")
 
-        @kb.add("<scroll-down>")
+        @kb.add(Keys.ScrollDown)
         def _scroll_down(_event) -> None:
-            self._scroll_output(4)
+            self._scroll_output(4, "key:scrolldown")
 
         @kb.add("end")
         def _jump_to_latest(_event) -> None:
-            self._follow_output_tail = True
-            self._set_output_text(self.output_area.text, follow_tail=True)
+            self._manual_scroll_mode = False
+            self._set_output_text(self._output_text, follow_tail=True)
 
         @kb.add("c-e")
         def _jump_to_latest_ctrl(_event) -> None:
-            self._follow_output_tail = True
-            self._set_output_text(self.output_area.text, follow_tail=True)
+            self._manual_scroll_mode = False
+            self._set_output_text(self._output_text, follow_tail=True)
 
         return kb
 
@@ -227,12 +408,16 @@ class PTK2Driver:
                 "output": colors.text_primary,
                 "input": colors.text_primary,
                 "status": f"bg:{colors.bg_secondary} {colors.text_secondary}",
-                "hint": f"bg:{colors.bg_secondary} {colors.text_muted}",
                 "prompt": f"{colors.user_input} bold",
                 "divider": colors.text_muted,
+                "toolbar.hint": colors.text_secondary,
+                "toolbar.cmd": f"{colors.primary} bold",
             }
         )
         return Style.from_dict(style_dict)
+
+    def _render_output(self):
+        return ANSI(self._output_text)
 
     def _render_prompt(self):
         return [("class:prompt", self._prompt_text)]
@@ -241,53 +426,43 @@ class PTK2Driver:
         state = self.session.status_bar.state
         marker = "●" if state.is_processing else "◉"
         model = state.model_name or "(none)"
-        view = "LIVE" if self._is_output_at_bottom() else "SCROLL"
+        view = "SCROLL" if self._manual_scroll_mode else "LIVE"
         text = (
-            f" Model: {model} | Mode: {state.mode} | "
+            f" TUI: PTK2 | Model: {model} | Mode: {state.mode} | "
             f"Total: {state.input_tokens}↓ {state.output_tokens}↑ | "
             f"Context: {state.context_tokens} | Cost: ${state.cost:.4f} | View: {view} | {marker}"
         )
         return [("class:status", text)]
 
-    def _render_command_hint(self):
-        text = self.input_area.text
-        if not text.startswith("/"):
-            return [("class:hint", "")]
-
-        suggestions = self.session.input_handler._get_command_suggestions(text)
-        if not suggestions:
-            return [("class:hint", "")]
-
-        hints = "  ".join(display for display, _ in suggestions[:6])
-        return [("class:hint", f" Commands: {hints}")]
+    def _render_completion_count(self):
+        state = self.input_area.buffer.complete_state
+        if not state or not state.completions:
+            return [("class:completion.count", "")]
+        idx = state.complete_index
+        if idx is None:
+            idx = 0
+        text = f"({idx + 1}/{len(state.completions)})"
+        return [("class:completion.count", text)]
 
     def _wire_slash_completion_sync(self) -> None:
-        """Keep slash completion menu in sync while typing/deleting."""
+        """Keep slash completion state in sync while typing/deleting."""
         buf = self.input_area.buffer
-
-        def _on_text_insert(_buffer) -> None:
-            if not buf.text.startswith("/"):
-                return
-            if buf.text == self._last_completion_sync_text:
-                return
-            self._last_completion_sync_text = buf.text
-            buf.start_completion(
-                select_first=False,
-                complete_event=CompleteEvent(text_inserted=True),
-            )
 
         def _on_text_changed(_buffer) -> None:
             new_text = buf.text
-            prev_text = self._prev_input_text
-            self._prev_input_text = new_text
+
+            # UX rule: after the user scrolls up to read history, any typing means
+            # "I'm back to chatting" -> jump back to LIVE/tail.
+            if self._manual_scroll_mode and new_text:
+                self._manual_scroll_mode = False
+                self._debug("scroll:exit reason=typing")
+                self._set_output_text(self._output_text, follow_tail=True)
 
             if new_text.startswith("/"):
-                is_deletion = len(new_text) < len(prev_text)
-                if not is_deletion:
-                    return
                 if new_text == self._last_completion_sync_text:
                     return
                 self._last_completion_sync_text = new_text
+                self._debug(f"completion:start text={new_text!r}")
                 buf.start_completion(
                     select_first=False,
                     complete_event=CompleteEvent(text_inserted=True),
@@ -295,9 +470,9 @@ class PTK2Driver:
                 return
 
             self._last_completion_sync_text = None
+            self._debug("completion:cancel")
             buf.cancel_completion()
 
-        buf.on_text_insert += _on_text_insert
         buf.on_text_changed += _on_text_changed
 
     def _accept_input(self, buf) -> bool:
@@ -313,13 +488,31 @@ class PTK2Driver:
 
         user_text = buf.text.strip()
         buf.text = ""
+        self._last_completion_sync_text = None
+        # Align with the default TUI: submitting any command/message returns to LIVE,
+        # so new output is always visible.
+        if user_text:
+            self._manual_scroll_mode = False
         self._input_queue.put_nowait(user_text)
+        self._invalidate()
         return True
 
     async def _prompt_async(self, prompt_text: str = "> ") -> str:
         self._prompt_text = prompt_text
         self._invalidate()
         return await self._input_queue.get()
+
+    def _truncate_output(self, text: str) -> str:
+        plain_len = len(strip_ansi(text))
+        if plain_len <= self._max_output_chars:
+            return text
+
+        drop = plain_len - self._max_output_chars
+        truncated = drop_visible_prefix_preserving_sgr(text, drop)
+
+        # Reset style so truncation never leaves the ANSI parser in an "active" style.
+        # (This is zero-width in `strip_ansi` and won't affect capture-based tests.)
+        return "\x1b[0m" + truncated
 
     def _set_output_text(
         self,
@@ -328,70 +521,78 @@ class PTK2Driver:
         follow_tail: bool,
         preserve_scroll: int | None = None,
     ) -> None:
-        cursor_position = (
-            len(text)
-            if follow_tail
-            else min(
-                self.output_area.buffer.cursor_position,
-                len(text),
-            )
-        )
-        self.output_area.buffer.set_document(
-            Document(text=text, cursor_position=cursor_position),
-            bypass_readonly=True,
-        )
-        if follow_tail:
-            # Large value is clamped by PTK to the actual bottom.
-            self.output_area.window.vertical_scroll = 10**9
-        elif preserve_scroll is not None:
-            self.output_area.window.vertical_scroll = max(0, preserve_scroll)
+        self._output_text = text
+        # Keep a cheap heuristic for whether the tail line might wrap.
+        # (Avoid `strip_ansi(text)` on the full buffer here.)
+        tail = text.rsplit("\n", 1)[-1]
+        self._plain_tail_line_len = len(strip_ansi(tail))
+        if not follow_tail and preserve_scroll is not None:
+            # Don't try to clamp here: with `wrap_lines=True`, `WindowRenderInfo.content_height`
+            # is based on logical lines (not wrapped rows) and clamping can create "can't scroll"
+            # regressions. Let prompt_toolkit clamp during render.
+            self.output_window.vertical_scroll = max(0, preserve_scroll)
         self._invalidate()
 
-    def _is_output_at_bottom(self) -> bool:
-        render_info = self.output_area.window.render_info
-        if render_info is None:
-            return self.output_area.buffer.cursor_position >= len(self.output_area.text)
-        return bool(render_info.bottom_visible)
+    def _max_output_scroll(self) -> int | None:
+        render_info = self.output_window.render_info
+        if render_info is not None:
+            return max(0, render_info.content_height - render_info.window_height)
+        return None
 
-    def _sync_follow_output_tail(self) -> None:
-        at_bottom = self._is_output_at_bottom()
-        if at_bottom:
-            self._follow_output_tail = True
-            return
-        self._follow_output_tail = False
-
-    def _scroll_output(self, delta: int) -> None:
-        window = self.output_area.window
+    def _scroll_output(self, delta: int, source: str = "") -> None:
+        window = self.output_window
+        before = window.vertical_scroll
         window.vertical_scroll = max(0, window.vertical_scroll + delta)
-        self._follow_output_tail = next_follow_tail_state(
-            current_follow_tail=self._follow_output_tail,
-            scroll_delta=delta,
-            at_bottom=self._is_output_at_bottom(),
+        after = window.vertical_scroll
+        max_scroll = self._max_output_scroll()
+        at_bottom = max_scroll is not None and after >= max_scroll
+
+        # State machine:
+        # - Any upward scroll enters manual mode.
+        # - While in manual mode, scrolling back down to the bottom exits it.
+        if delta < 0:
+            self._manual_scroll_mode = True
+        elif delta > 0 and self._manual_scroll_mode and at_bottom:
+            self._manual_scroll_mode = False
+            self._debug("scroll:exit reason=bottom")
+        self._debug(
+            f"scroll src={source or 'unknown'} delta={delta} before={before} after={after} "
+            f"manual={self._manual_scroll_mode} max_scroll={max_scroll} at_bottom={at_bottom}"
         )
         self._invalidate()
 
     def _append_output(self, chunk: str) -> None:
-        normalized = normalize_output_chunk(chunk)
+        raw = self._raw_ansi_carry + chunk
+        self._raw_ansi_carry = ""
+
+        raw, carry = split_incomplete_ansi_suffix(raw)
+        if carry:
+            self._raw_ansi_carry = carry
+
+        normalized = normalize_output_chunk(raw)
         if not normalized:
             return
 
-        self._sync_follow_output_tail()
-        combined = self.output_area.text + normalized
-        if len(combined) > self._max_output_chars:
-            combined = combined[-self._max_output_chars :]
+        if self._capture_path and self._capture_fp is not None:
+            with contextlib.suppress(Exception):
+                self._capture_fp.write(strip_ansi(normalized))
+                self._capture_fp.flush()
+
+        combined = self._truncate_output(self._output_text + normalized)
         self._set_output_text(
             combined,
-            follow_tail=self._follow_output_tail,
-            preserve_scroll=self.output_area.window.vertical_scroll,
+            follow_tail=not self._manual_scroll_mode,
+            preserve_scroll=self.output_window.vertical_scroll,
+        )
+        self._debug(
+            f"append len={len(normalized)} total={len(self._output_text)} "
+            f"manual={self._manual_scroll_mode} vscroll={self.output_window.vertical_scroll} "
+            f"max_scroll={self._max_output_scroll()}"
         )
 
     def _on_stream_text(self, text: str) -> None:
-        if not text:
+        if not text or self._loop is None:
             return
-
-        if self._loop is None:
-            return
-
         self._loop.call_soon_threadsafe(self._append_output, text)
 
     def _invalidate(self) -> None:
@@ -404,7 +605,6 @@ class PTK2Driver:
             self._invalidate()
 
         def _status_show_proxy() -> None:
-            # Status is rendered in a dedicated PTK footer; don't print Rich panel.
             self._invalidate()
 
         self.session.status_bar.update = _status_update_proxy  # type: ignore[method-assign]
@@ -430,7 +630,6 @@ class PTK2Driver:
         old_console = terminal_ui.console
         terminal_ui.console = Console(
             file=cast(IO[str], self._stream),
-            # PTK2 output pane can render ANSI; keep Rich coloring enabled.
             force_terminal=True,
             color_system="truecolor",
             theme=Theme.get_rich_theme(),
@@ -443,28 +642,50 @@ class PTK2Driver:
         session_error: Exception | None = None
 
         try:
-            with contextlib.redirect_stdout(self._stream), contextlib.redirect_stderr(self._stream):
-                session_task = asyncio.create_task(self.session.run())
-                stop_task = asyncio.create_task(self._stop_app_when_done(session_task))
+            if self._capture_path:
+                with contextlib.suppress(Exception):
+                    # Async-friendly I/O isn't necessary here: this runs once at startup.
+                    self._capture_fp = open(  # noqa: ASYNC230,SIM115
+                        self._capture_path, "a", encoding="utf-8"
+                    )
+            if self._debug_path:
+                with contextlib.suppress(Exception):
+                    # Async-friendly I/O isn't necessary here: this runs once at startup.
+                    self._debug_fp = open(  # noqa: ASYNC230,SIM115
+                        self._debug_path, "a", encoding="utf-8"
+                    )
 
-                await self.app.run_async()
+            # Do not redirect global stdout/stderr: PTK renderer writes to terminal
+            # output and redirecting would feed paint frames back into the output pane.
+            session_task = asyncio.create_task(self.session.run())
+            stop_task = asyncio.create_task(self._stop_app_when_done(session_task))
 
-                if session_task and not session_task.done():
-                    session_task.cancel()
+            await self.app.run_async()
 
-                if session_task is not None:
-                    try:
-                        await session_task
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as exc:  # pragma: no cover - passthrough
-                        session_error = exc
+            if session_task and not session_task.done():
+                session_task.cancel()
+
+            if session_task is not None:
+                try:
+                    await session_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:  # pragma: no cover - passthrough
+                    session_error = exc
 
         finally:
             if stop_task is not None:
                 stop_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await stop_task
+            if self._capture_fp is not None:
+                with contextlib.suppress(Exception):
+                    self._capture_fp.close()
+                self._capture_fp = None
+            if self._debug_fp is not None:
+                with contextlib.suppress(Exception):
+                    self._debug_fp.close()
+                self._debug_fp = None
 
             terminal_ui.console = old_console
             self._restore_session_hooks()
@@ -472,9 +693,17 @@ class PTK2Driver:
         if session_error is not None:
             raise session_error
 
+    def _debug(self, msg: str) -> None:
+        if not self._debug_fp:
+            return
+        ts = time.monotonic()
+        with contextlib.suppress(Exception):
+            self._debug_fp.write(f"{ts:.6f} {msg}\n")
+            self._debug_fp.flush()
+
 
 def run_interactive_mode_ptk2(agent):
-    """Run interactive mode in experimental single-renderer PTK2 mode."""
+    """Run interactive mode in PTK2 mode."""
     session = InteractiveSession(agent)
     driver = PTK2Driver(session)
     return driver.run()

@@ -236,9 +236,9 @@ class InputHandler:
         self.session.default_buffer.on_text_insert += _on_text_insert
 
         def _on_text_changed(_buffer) -> None:
-            # Codex-style: when the input starts with "/", keep the completion menu in sync
-            # with every keystroke. (Some terminals don't refresh completion state reliably
-            # unless we explicitly trigger it.)
+            # When the input starts with "/", keep the completion menu in sync with every
+            # keystroke. (Some terminals don't refresh completion state reliably unless we
+            # explicitly trigger it.)
             buf = self.session.default_buffer
             if buf.text.startswith("/"):
                 buf.start_completion(

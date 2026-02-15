@@ -150,6 +150,10 @@ class Theme:
             "completion-menu": f"bg:{colors.bg_secondary} {colors.text_primary}",
             "completion-menu.completion": f"bg:{colors.bg_secondary} {colors.text_primary}",
             "completion-menu.completion.current": f"bg:{colors.primary} {colors.bg_primary}",
+            "completion-menu.meta.completion": f"bg:{colors.bg_secondary} {colors.text_secondary}",
+            "completion-menu.meta.completion.current": f"bg:{colors.primary} {colors.bg_primary}",
+            "completion.border": colors.secondary,
+            "completion.count": colors.text_secondary,
             "scrollbar.background": colors.bg_secondary,
             "scrollbar.button": colors.text_muted,
         }

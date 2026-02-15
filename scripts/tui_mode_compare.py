@@ -25,6 +25,7 @@ import pty
 import re
 import select
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +71,19 @@ class PtySession:
         env.pop("OURO_TUI", None)
         if mode != "default":
             env["OURO_TUI"] = mode
+        self._capture_path: str | None = None
+        self._capture_pos = 0
+        self._debug_path: str | None = None
+        self._debug_pos = 0
+        if mode == "ptk2":
+            fd, path = tempfile.mkstemp(prefix="ouro-ptk2-capture-", suffix=".log")
+            os.close(fd)
+            self._capture_path = path
+            env["PTK2_CAPTURE_PATH"] = path
+            fd, path = tempfile.mkstemp(prefix="ouro-ptk2-debug-", suffix=".log")
+            os.close(fd)
+            self._debug_path = path
+            env["PTK2_DEBUG_PATH"] = path
 
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
@@ -84,19 +98,46 @@ class PtySession:
         )
         os.close(slave_fd)
         self.text_tail = ""
+        self.debug_tail = ""
+
+    def _read_capture(self) -> None:
+        if not self._capture_path:
+            return
+        try:
+            with open(self._capture_path, encoding="utf-8", errors="ignore") as f:
+                f.seek(self._capture_pos)
+                chunk = f.read()
+                self._capture_pos = f.tell()
+        except OSError:
+            return
+        if chunk:
+            self.text_tail = (self.text_tail + chunk)[-300000:]
+
+    def _read_debug(self) -> None:
+        if not self._debug_path:
+            return
+        try:
+            with open(self._debug_path, encoding="utf-8", errors="ignore") as f:
+                f.seek(self._debug_pos)
+                chunk = f.read()
+                self._debug_pos = f.tell()
+        except OSError:
+            return
+        if chunk:
+            self.debug_tail = (self.debug_tail + chunk)[-200000:]
 
     def read_some(self, timeout: float = 0.05) -> None:
         ready, _, _ = select.select([self.master_fd], [], [], timeout)
-        if not ready:
-            return
-        try:
-            data = os.read(self.master_fd, 65536)
-        except OSError:
-            return
-        if not data:
-            return
-        decoded = data.decode("utf-8", errors="ignore")
-        self.text_tail = (self.text_tail + strip_ansi(decoded))[-300000:]
+        if ready:
+            try:
+                data = os.read(self.master_fd, 65536)
+            except OSError:
+                data = b""
+            if data:
+                decoded = data.decode("utf-8", errors="ignore")
+                self.text_tail = (self.text_tail + strip_ansi(decoded))[-300000:]
+        self._read_capture()
+        self._read_debug()
 
     def wait_for(
         self,
@@ -123,6 +164,29 @@ class PtySession:
 
         return False, f"timeout waiting for {patterns}"
 
+    def wait_for_debug(
+        self,
+        patterns: Iterable[str],
+        timeout: float,
+        since_len: int | None = None,
+    ) -> tuple[bool, str]:
+        patterns = list(patterns)
+        deadline = time.monotonic() + timeout
+
+        while time.monotonic() < deadline:
+            self.read_some(0.05)
+            hay_all = self.debug_tail
+            hay = hay_all[since_len:] if since_len is not None else hay_all
+
+            for pattern in patterns:
+                if pattern in hay:
+                    return True, pattern
+
+            if self.proc.poll() is not None:
+                return False, f"process exited rc={self.proc.returncode}"
+
+        return False, f"timeout waiting for {patterns}"
+
     def send(self, text: str) -> None:
         os.write(self.master_fd, text.encode("utf-8"))
 
@@ -141,6 +205,12 @@ class PtySession:
         finally:
             with contextlib.suppress(OSError):
                 os.close(self.master_fd)
+            if self._capture_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(self._capture_path)
+            if self._debug_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(self._debug_path)
 
 
 def run_mode(mode: str) -> ModeResult:
@@ -206,6 +276,52 @@ def run_mode(mode: str) -> ModeResult:
                 steps,
                 session.text_tail[-6000:],
             )
+
+        # PTK2 regression check: after scrolling up, any typing should return to LIVE/tail.
+        if mode == "ptk2":
+            # 1) PageUp then PageDown should exit manual scroll mode when back at bottom.
+            debug_since = len(session.debug_tail)
+            session.send("\x1b[5~")  # PageUp -> enter scroll mode
+            session.send("\x1b[6~" * 8)  # PageDown x8 -> back to bottom (or no-op if short)
+            ok_dbg, detail_dbg = session.wait_for_debug(
+                ["scroll:exit reason=bottom"],
+                timeout=2.0,
+                since_len=debug_since,
+            )
+            steps.append(
+                StepResult("ptk2_scroll_bottom", ok_dbg, 0.0 if ok_dbg else None, detail_dbg)
+            )
+            if not ok_dbg:
+                return ModeResult(
+                    mode,
+                    False,
+                    startup_s,
+                    time.monotonic() - start_time,
+                    steps,
+                    session.text_tail[-6000:],
+                )
+
+            # 2) PageUp then any typing should return to LIVE/tail.
+            debug_since = len(session.debug_tail)
+            session.send("\x1b[5~")  # PageUp -> enter scroll mode
+            session.send("x\x7f")  # type + backspace
+            ok_dbg, detail_dbg = session.wait_for_debug(
+                ["scroll:exit reason=typing"],
+                timeout=2.0,
+                since_len=debug_since,
+            )
+            steps.append(
+                StepResult("ptk2_scroll_typing", ok_dbg, 0.0 if ok_dbg else None, detail_dbg)
+            )
+            if not ok_dbg:
+                return ModeResult(
+                    mode,
+                    False,
+                    startup_s,
+                    time.monotonic() - start_time,
+                    steps,
+                    session.text_tail[-6000:],
+                )
 
         basic_plan: list[tuple[str, str, list[str], float]] = [
             ("stats", "/stats\r", ["Memory Statistics"], 8.0),

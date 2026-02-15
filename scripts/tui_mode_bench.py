@@ -27,6 +27,7 @@ import re
 import select
 import statistics
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -83,6 +84,13 @@ class PtySession:
         env.pop("OURO_TUI", None)
         if mode != "default":
             env["OURO_TUI"] = mode
+        self._capture_path: str | None = None
+        self._capture_pos = 0
+        if mode == "ptk2":
+            fd, path = tempfile.mkstemp(prefix="ouro-ptk2-capture-", suffix=".log")
+            os.close(fd)
+            self._capture_path = path
+            env["PTK2_CAPTURE_PATH"] = path
 
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
@@ -98,17 +106,31 @@ class PtySession:
         os.close(slave_fd)
         self.buffer = ""
 
-    def read_some(self, timeout: float = 0.05) -> None:
-        ready, _, _ = select.select([self.master_fd], [], [], timeout)
-        if not ready:
+    def _read_capture(self) -> None:
+        if not self._capture_path:
             return
         try:
-            data = os.read(self.master_fd, 65536)
+            with open(self._capture_path, encoding="utf-8", errors="ignore") as f:
+                f.seek(self._capture_pos)
+                chunk = f.read()
+                self._capture_pos = f.tell()
         except OSError:
             return
-        if not data:
-            return
-        self.buffer = (self.buffer + strip_ansi(data.decode("utf-8", errors="ignore")))[-260000:]
+        if chunk:
+            self.buffer = (self.buffer + chunk)[-260000:]
+
+    def read_some(self, timeout: float = 0.05) -> None:
+        ready, _, _ = select.select([self.master_fd], [], [], timeout)
+        if ready:
+            try:
+                data = os.read(self.master_fd, 65536)
+            except OSError:
+                data = b""
+            if data:
+                self.buffer = (self.buffer + strip_ansi(data.decode("utf-8", errors="ignore")))[
+                    -260000:
+                ]
+        self._read_capture()
 
     def wait_for(self, patterns: list[str], timeout: float, since_len: int) -> bool:
         compact_patterns = [compact(p) for p in patterns]
@@ -139,6 +161,9 @@ class PtySession:
         finally:
             with contextlib.suppress(OSError):
                 os.close(self.master_fd)
+            if self._capture_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(self._capture_path)
 
 
 def run_once(mode: str) -> dict[str, float] | None:

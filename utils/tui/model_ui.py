@@ -104,7 +104,7 @@ async def open_config_and_wait_for_save(config_path: str) -> bool:
 
 
 async def pick_model_id(model_manager: _ModelManager, title: str) -> str | None:
-    """Pick a model_id using a keyboard-only list (Codex-style)."""
+    """Pick a model_id using a keyboard-only list."""
     models = list(model_manager.list_models())
     if not models:
         return None
