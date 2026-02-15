@@ -75,9 +75,14 @@ class InputArea(Widget):
     COMMANDS = [
         ("/help", "Show available commands"),
         ("/clear", "Clear conversation memory"),
+        ("/reset", "Clear conversation memory"),
         ("/stats", "Show memory statistics"),
-        ("/history", "List saved sessions"),
-        ("/dump-memory", "Dump session to JSON file"),
+        ("/compact", "Compress conversation memory"),
+        ("/model", "Show or switch models"),
+        ("/verbose", "Toggle thinking display"),
+        ("/resume", "Resume a saved session"),
+        ("/login", "Login to OAuth provider"),
+        ("/logout", "Logout from OAuth provider"),
         ("/exit", "Exit ouro"),
         ("/quit", "Exit ouro"),
     ]
