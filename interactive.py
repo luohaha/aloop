@@ -380,6 +380,21 @@ class InteractiveSession:
                 return True
             await self._bench_redraw(command_parts[1:])
 
+        elif command == "/__bench_paste":
+            # Internal-only command used by benchmark scripts to validate
+            # paste (including multi-line) behavior.
+            if os.environ.get("OURO_INTERNAL_BENCH") != "1":
+                colors = Theme.get_colors()
+                terminal_ui.console.print(
+                    f"[bold {colors.error}]Unknown command: {command}[/bold {colors.error}]"
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Type /help to see available commands[/{colors.text_muted}]\n"
+                )
+                return True
+            raw = user_input[len("/__bench_paste") :].lstrip(" ")
+            terminal_ui.console.print(f"PASTE_ECHO:{raw!r}")
+
         else:
             colors = Theme.get_colors()
             terminal_ui.console.print(

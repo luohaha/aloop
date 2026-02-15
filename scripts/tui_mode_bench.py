@@ -37,6 +37,14 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 WHITESPACE_RE = re.compile(r"\s+")
 
 
+def ouro_cmd() -> list[str]:
+    """Return a command that runs the local repo code without `uv run`."""
+    py = REPO_ROOT / ".venv" / "bin" / "python"
+    if py.exists():
+        return [str(py), "-m", "cli"]
+    return ["python3", "-m", "cli"]
+
+
 STEP_DEFS: list[tuple[str, str, list[str], float]] = [
     ("help", "/help\r", ["Available Commands:", "Keyboard", "model edit"], 10.0),
     ("stats", "/stats\r", ["Memory Statistics"], 8.0),
@@ -95,7 +103,7 @@ class PtySession:
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
         self.proc = subprocess.Popen(  # noqa: S603
-            ["uv", "run", "ouro"],
+            ouro_cmd(),
             cwd=str(REPO_ROOT),
             env=env,
             stdin=slave_fd,

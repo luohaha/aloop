@@ -260,6 +260,7 @@ class PTK2Driver:
         self._capture_fp: IO[str] | None = None
         self._debug_path = os.environ.get("PTK2_DEBUG_PATH")
         self._debug_fp: IO[str] | None = None
+        self._mouse_enabled = True
 
         def _output_cursor_y(line_count: int) -> int:
             if line_count <= 0:
@@ -388,7 +389,7 @@ class PTK2Driver:
             key_bindings=self._create_key_bindings(),
             style=self._get_style(),
             full_screen=True,
-            mouse_support=True,
+            mouse_support=Condition(lambda: self._mouse_enabled),
         )
 
         self._stream = _OutputStream(self._on_stream_text)
@@ -415,6 +416,13 @@ class PTK2Driver:
                 return
             self._input_queue.put_nowait("/exit")
 
+        @kb.add("f2")
+        def _toggle_mouse(_event) -> None:
+            # Mouse reporting blocks terminal selection in many emulators.
+            # Provide a quick toggle for copy/paste workflows.
+            self._mouse_enabled = not self._mouse_enabled
+            self._invalidate()
+
         @kb.add("pageup")
         def _page_up(_event) -> None:
             self._scroll_output(-12, "key:pageup")
@@ -440,6 +448,14 @@ class PTK2Driver:
         def _jump_to_latest_ctrl(_event) -> None:
             self._manual_scroll_mode = False
             self._set_output_text(self._output_text, follow_tail=True)
+
+        @kb.add(Keys.BracketedPaste)
+        def _bracketed_paste(event) -> None:  # noqa: ANN001
+            # Ensure bracketed paste inserts text into the input buffer.
+            # (Some terminals send multi-line paste; we keep it as-is.)
+            data = getattr(event, "data", "")
+            if data:
+                self.input_area.buffer.insert_text(data)
 
         return kb
 
@@ -474,10 +490,11 @@ class PTK2Driver:
         marker = "●" if state.is_processing else "◉"
         model = state.model_name or "(none)"
         view = "SCROLL" if self._manual_scroll_mode else "LIVE"
+        mouse = "ON" if self._mouse_enabled else "OFF"
         text = (
             f" TUI: PTK2 | Model: {model} | Mode: {state.mode} | "
             f"Total: {state.input_tokens}↓ {state.output_tokens}↑ | "
-            f"Context: {state.context_tokens} | Cost: ${state.cost:.4f} | View: {view} | {marker}"
+            f"Context: {state.context_tokens} | Cost: ${state.cost:.4f} | View: {view} | Mouse: {mouse} | {marker}"
         )
         return [("class:status", text)]
 

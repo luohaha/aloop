@@ -38,6 +38,14 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 WHITESPACE_RE = re.compile(r"\s+")
 
 
+def ouro_cmd() -> list[str]:
+    """Return a command that runs the local repo code without `uv run`."""
+    py = REPO_ROOT / ".venv" / "bin" / "python"
+    if py.exists():
+        return [str(py), "-m", "cli"]
+    return ["python3", "-m", "cli"]
+
+
 def strip_ansi(text: str) -> str:
     text = OSC_RE.sub("", text)
     text = ANSI_RE.sub("", text)
@@ -73,7 +81,7 @@ class PtySession:
 
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
-        cmd = ["uv", "run", "ouro"]
+        cmd = ouro_cmd()
         if self._time_path:
             cmd = ["/usr/bin/time", "-p", "-o", self._time_path, *cmd]
         self.proc = subprocess.Popen(  # noqa: S603

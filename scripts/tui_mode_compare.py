@@ -37,6 +37,19 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 WHITESPACE_RE = re.compile(r"\s+")
 
 
+def ouro_cmd() -> list[str]:
+    """Return a command that runs the local repo code without `uv run`.
+
+    `uv run` can rebuild/reinstall the project into the shared venv, which is
+    occasionally flaky under concurrent runs. For these PTY smoke checks we
+    prefer invoking the repo directly with the configured venv Python.
+    """
+    py = REPO_ROOT / ".venv" / "bin" / "python"
+    if py.exists():
+        return [str(py), "-m", "cli"]
+    return ["python3", "-m", "cli"]
+
+
 def strip_ansi(text: str) -> str:
     text = OSC_RE.sub("", text)
     text = ANSI_RE.sub("", text)
@@ -71,6 +84,7 @@ class PtySession:
         env.pop("OURO_TUI", None)
         if mode != "default":
             env["OURO_TUI"] = mode
+        env["OURO_INTERNAL_BENCH"] = "1"
         self._capture_path: str | None = None
         self._capture_pos = 0
         self._debug_path: str | None = None
@@ -88,7 +102,7 @@ class PtySession:
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
         self.proc = subprocess.Popen(  # noqa: S603
-            ["uv", "run", "ouro"],
+            ouro_cmd(),
             cwd=str(REPO_ROOT),
             env=env,
             stdin=slave_fd,
@@ -252,6 +266,25 @@ def run_mode(mode: str) -> ModeResult:
             )
 
         if not run_step("help", "/help\r", ["Available Commands:", "Keyboard", "model edit"], 10.0):
+            return ModeResult(
+                mode,
+                False,
+                startup_s,
+                time.monotonic() - start_time,
+                steps,
+                session.text_tail[-6000:],
+            )
+
+        # Bracketed paste smoke: verify multi-line paste is accepted as input.
+        # Use an internal command so we can assert the paste content without
+        # depending on external providers or tools.
+        paste_payload = "\x1b[200~/__bench_paste one\nTWO\nthree\x1b[201~\r"
+        if not run_step(
+            "paste",
+            paste_payload,
+            ["PASTE_ECHO:", "one\\nTWO\\nthree"],
+            8.0,
+        ):
             return ModeResult(
                 mode,
                 False,
