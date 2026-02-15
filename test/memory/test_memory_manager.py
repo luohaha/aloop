@@ -2,6 +2,7 @@
 
 from llm.base import LLMMessage
 from memory import MemoryManager
+from memory.manager import CompressionUrgency
 from memory.types import CompressionStrategy
 
 
@@ -17,6 +18,8 @@ class TestMemoryManagerBasics:
         assert manager.compression_count == 0
         assert len(manager.system_messages) == 0
         assert manager.short_term.count() == 0
+        assert manager._last_api_context_tokens is None
+        assert manager._estimated_delta_tokens == 0
 
     async def test_add_system_message(self, mock_llm):
         """Test that system messages are stored separately."""
@@ -83,24 +86,27 @@ class TestMemoryManagerBasics:
         assert manager.compression_count == 0
         assert len(manager.system_messages) == 0
         assert manager.short_term.count() == 0
+        assert manager._last_api_context_tokens is None
+        assert manager._estimated_delta_tokens == 0
 
 
 class TestMemoryCompression:
     """Test compression triggering and behavior."""
 
-    async def test_compression_on_short_term_full(self, set_memory_config, mock_llm):
-        """Test compression triggers when short-term memory is full."""
+    async def test_compression_on_emergency_cap(self, set_memory_config, mock_llm):
+        """Test compression triggers when emergency cap is reached."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=5,
             MEMORY_COMPRESSION_THRESHOLD=200000,  # Very high to avoid hard limit
+            MEMORY_SOFT_THRESHOLD_RATIO=0.6,
         )
         manager = MemoryManager(mock_llm)
 
-        # Add messages until short-term is full
+        # Add messages until emergency cap is reached
         for i in range(5):
             await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
 
-        # After 5 messages, compression should have been triggered and short-term cleared
+        # After 5 messages, compression should have been triggered
         assert manager.compression_count == 1
         assert manager.was_compressed_last_iteration
         # After compression, short-term is cleared so it's not full
@@ -110,7 +116,8 @@ class TestMemoryCompression:
         """Test compression triggers on hard limit (compression threshold)."""
         set_memory_config(
             MEMORY_COMPRESSION_THRESHOLD=100,  # Very low to trigger easily
-            MEMORY_SHORT_TERM_SIZE=100,
+            MEMORY_SHORT_TERM_SIZE=500,
+            MEMORY_SOFT_THRESHOLD_RATIO=0.6,
         )
         manager = MemoryManager(mock_llm)
 
@@ -123,7 +130,7 @@ class TestMemoryCompression:
     async def test_compression_creates_summary(self, set_memory_config, mock_llm, simple_messages):
         """Test that compression creates a summary message in short_term."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=10,  # Large enough to not auto-trigger
+            MEMORY_SHORT_TERM_SIZE=500,  # Large enough to not auto-trigger
             MEMORY_COMPRESSION_THRESHOLD=200000,
         )
         manager = MemoryManager(mock_llm)
@@ -165,6 +172,167 @@ class TestMemoryCompression:
         assert "short_term_count" in stats
 
 
+class TestAPIGroundedTokenTracking:
+    """Test API-grounded token tracking (Step 2)."""
+
+    async def test_api_grounded_token_tracking(self, set_memory_config, mock_llm):
+        """Test that API-reported tokens are used as authoritative count."""
+        set_memory_config(
+            MEMORY_SHORT_TERM_SIZE=500,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
+        )
+        manager = MemoryManager(mock_llm)
+
+        # First message without API tokens — falls back to estimation
+        await manager.add_message(LLMMessage(role="user", content="Hello"))
+        assert manager._last_api_context_tokens is None
+
+        # Message with API-reported tokens
+        await manager.add_message(
+            LLMMessage(role="assistant", content="Hi there!"),
+            actual_tokens={"input": 1000, "output": 200},
+        )
+
+        # API-grounded tracking should be active
+        assert manager._last_api_context_tokens == 1200  # input + output
+        assert manager._estimated_delta_tokens == 0
+        assert manager.current_tokens == 1200
+
+        # Next user message adds only estimated delta
+        await manager.add_message(LLMMessage(role="user", content="How are you?"))
+        assert manager._estimated_delta_tokens > 0
+        assert manager.current_tokens == 1200 + manager._estimated_delta_tokens
+
+    async def test_grounded_tracking_resets_after_compression(self, set_memory_config, mock_llm):
+        """Test that API-grounded tracking resets after compression."""
+        set_memory_config(
+            MEMORY_SHORT_TERM_SIZE=500,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
+        )
+        manager = MemoryManager(mock_llm)
+
+        # Set up grounded tracking
+        await manager.add_message(LLMMessage(role="user", content="Hello"))
+        await manager.add_message(
+            LLMMessage(role="assistant", content="Hi"),
+            actual_tokens={"input": 500, "output": 100},
+        )
+        assert manager._last_api_context_tokens == 600
+
+        # Trigger compression
+        await manager.compress()
+
+        # After compression, grounded tracking is reset
+        assert manager._last_api_context_tokens is None
+        assert manager._estimated_delta_tokens == 0
+
+    async def test_fallback_to_estimation_without_api_call(self, set_memory_config, mock_llm):
+        """Test fallback to full estimation when no API call has been made."""
+        set_memory_config(
+            MEMORY_SHORT_TERM_SIZE=500,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
+        )
+        manager = MemoryManager(mock_llm)
+
+        # Add messages without any API tokens
+        await manager.add_message(LLMMessage(role="user", content="Hello"))
+        await manager.add_message(LLMMessage(role="user", content="World"))
+
+        # Should use estimation (since no API call yet)
+        assert manager._last_api_context_tokens is None
+        assert manager.current_tokens > 0  # Estimated
+
+
+class TestProgressiveCompression:
+    """Test progressive compression with soft/hard thresholds (Step 5)."""
+
+    async def test_soft_threshold_triggers_partial(self, set_memory_config, mock_llm):
+        """Test that soft threshold triggers partial compression."""
+        set_memory_config(
+            MEMORY_COMPRESSION_THRESHOLD=200,  # Hard limit
+            MEMORY_SOFT_THRESHOLD_RATIO=0.5,  # Soft at 100 tokens
+            MEMORY_SHORT_TERM_SIZE=500,
+        )
+        manager = MemoryManager(mock_llm)
+
+        # Add enough messages to exceed soft threshold (~100 tokens)
+        # Each message is roughly 10-15 tokens estimated, so 15 messages should do it
+        for i in range(15):
+            await manager.add_message(
+                LLMMessage(
+                    role="user",
+                    content=f"Message number {i} with some content and extra padding here to push tokens higher",
+                )
+            )
+
+        # After adding messages, check urgency (may have already compressed)
+        # If compression already happened, that's fine — it means the threshold worked
+        if manager.compression_count == 0:
+            urgency = manager._get_compression_urgency()
+            assert urgency in (CompressionUrgency.SOFT, CompressionUrgency.HARD)
+        else:
+            # Compression was triggered automatically — threshold worked
+            assert manager.compression_count >= 1
+
+    async def test_hard_threshold_triggers_full(self, set_memory_config, mock_llm):
+        """Test that hard threshold triggers full compression."""
+        set_memory_config(
+            MEMORY_COMPRESSION_THRESHOLD=50,  # Very low
+            MEMORY_SOFT_THRESHOLD_RATIO=0.6,
+            MEMORY_SHORT_TERM_SIZE=500,
+        )
+        manager = MemoryManager(mock_llm)
+
+        # Add a long message to exceed hard limit
+        long_message = "This is a very long message with lots of content. " * 50
+        await manager.add_message(LLMMessage(role="user", content=long_message))
+
+        # Should have triggered compression
+        assert manager.compression_count >= 1
+
+    async def test_urgency_none_below_soft(self, set_memory_config, mock_llm):
+        """Test that urgency is NONE when below soft threshold."""
+        set_memory_config(
+            MEMORY_COMPRESSION_THRESHOLD=200000,
+            MEMORY_SOFT_THRESHOLD_RATIO=0.6,
+            MEMORY_SHORT_TERM_SIZE=500,
+        )
+        manager = MemoryManager(mock_llm)
+
+        await manager.add_message(LLMMessage(role="user", content="Short message"))
+
+        assert manager._get_compression_urgency() == CompressionUrgency.NONE
+
+    async def test_safe_split_point_respects_tool_pairs(self, set_memory_config, mock_llm):
+        """Test that _find_safe_split_point doesn't break tool pairs."""
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=500)
+        manager = MemoryManager(mock_llm)
+
+        # Create messages with a tool pair spanning the midpoint
+        messages = [
+            LLMMessage(role="user", content="Request 0"),
+            LLMMessage(role="assistant", content="Response 0"),
+            LLMMessage(role="user", content="Request 1"),
+            LLMMessage(
+                role="assistant",
+                content=[
+                    {"type": "tool_use", "id": "t1", "name": "tool", "input": {}},
+                ],
+            ),
+            LLMMessage(
+                role="user",
+                content=[
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "result"},
+                ],
+            ),
+            LLMMessage(role="assistant", content="Response 1"),
+        ]
+
+        split = manager._find_safe_split_point(messages)
+        # Split should not be between indices 3 and 4 (tool pair)
+        assert split <= 3 or split >= 5
+
+
 class TestToolCallMatching:
     """Test tool_use and tool_result matching scenarios."""
 
@@ -173,7 +341,7 @@ class TestToolCallMatching:
     ):
         """Test that tool_use and tool_result pairs are preserved together."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=3,
+            MEMORY_SHORT_TERM_SIZE=500,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
             MEMORY_COMPRESSION_THRESHOLD=200000,
         )
@@ -212,7 +380,7 @@ class TestToolCallMatching:
     ):
         """Test behavior with mismatched tool_use/tool_result pairs."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=4,
+            MEMORY_SHORT_TERM_SIZE=500,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
         )
         manager = MemoryManager(mock_llm)
@@ -258,7 +426,7 @@ class TestToolCallMatching:
         is preserved via todo_context injection from MemoryManager's provider callback.
         """
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid auto-compression
+            MEMORY_SHORT_TERM_SIZE=500,  # Large enough to avoid auto-compression
             MEMORY_SHORT_TERM_MIN_SIZE=1,
         )
         manager = MemoryManager(mock_llm)
@@ -297,7 +465,7 @@ class TestToolCallMatching:
     async def test_multiple_tool_pairs_in_sequence(self, set_memory_config, mock_llm):
         """Test multiple consecutive tool_use/tool_result pairs."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=10,
+            MEMORY_SHORT_TERM_SIZE=500,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
         )
         manager = MemoryManager(mock_llm)
@@ -425,7 +593,7 @@ class TestEdgeCases:
 
     async def test_compression_with_mixed_content(self, set_memory_config, mock_llm):
         """Test compression with mixed text and tool content."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=500)
         manager = MemoryManager(mock_llm)
 
         messages = [

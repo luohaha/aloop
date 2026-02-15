@@ -19,7 +19,7 @@ class TestShortTermMemoryBasics:
         """Test default initialization."""
         stm = ShortTermMemory()
 
-        assert stm.max_size == 20  # Default value
+        assert stm.max_size == 500  # Default emergency cap
         assert stm.count() == 0
 
     def test_add_single_message(self):
@@ -92,54 +92,34 @@ class TestShortTermMemoryCapacity:
 
         assert stm.is_full()
 
-    def test_is_full_after_overflow(self):
-        """Test is_full remains True after overflow."""
-        stm = ShortTermMemory(max_size=3)
+    def test_no_silent_eviction(self):
+        """Test that messages are never silently evicted — all 200 preserved."""
+        stm = ShortTermMemory(max_size=500)
 
-        for i in range(5):  # Add more than capacity
+        for i in range(200):
+            stm.add_message(LLMMessage(role="user", content=f"Message {i}"))
+
+        assert stm.count() == 200
+        msgs = stm.get_messages()
+        assert msgs[0].content == "Message 0"
+        assert msgs[199].content == "Message 199"
+
+    def test_emergency_cap(self):
+        """Test that is_full triggers at emergency cap."""
+        stm = ShortTermMemory(max_size=10)
+
+        for i in range(10):
             stm.add_message(LLMMessage(role="user", content=f"Message {i}"))
 
         assert stm.is_full()
-        assert stm.count() == 3  # Should stay at max_size
-
-    def test_automatic_eviction_on_overflow(self):
-        """Test that oldest messages are automatically evicted."""
-        stm = ShortTermMemory(max_size=3)
-
-        msg1 = LLMMessage(role="user", content="First")
-        msg2 = LLMMessage(role="user", content="Second")
-        msg3 = LLMMessage(role="user", content="Third")
-        msg4 = LLMMessage(role="user", content="Fourth")
-
-        stm.add_message(msg1)
-        stm.add_message(msg2)
-        stm.add_message(msg3)
-        stm.add_message(msg4)  # This should evict msg1
-
-        messages = stm.get_messages()
-        assert len(messages) == 3
-        assert msg1 not in messages  # First message evicted
-        assert msg2 in messages
-        assert msg3 in messages
-        assert msg4 in messages
-
-    def test_eviction_order_fifo(self):
-        """Test that eviction follows FIFO (First In, First Out)."""
-        stm = ShortTermMemory(max_size=2)
-
-        messages = []
-        for i in range(5):
-            msg = LLMMessage(role="user", content=f"Message {i}")
-            messages.append(msg)
-            stm.add_message(msg)
-
-        # Only last 2 messages should remain
-        remaining = stm.get_messages()
-        assert remaining == messages[-2:]
+        # Messages above the cap are still stored (no eviction)
+        stm.add_message(LLMMessage(role="user", content="Extra"))
+        assert stm.count() == 11
+        assert stm.is_full()
 
     def test_count_accuracy(self):
         """Test that count() returns accurate count."""
-        stm = ShortTermMemory(max_size=5)
+        stm = ShortTermMemory(max_size=500)
 
         assert stm.count() == 0
 
@@ -149,11 +129,11 @@ class TestShortTermMemoryCapacity:
         stm.add_message(LLMMessage(role="user", content="2"))
         assert stm.count() == 2
 
-        # Add more than capacity
+        # Add many more — all are preserved
         for i in range(10):
             stm.add_message(LLMMessage(role="user", content=f"Msg {i}"))
 
-        assert stm.count() == 5  # Should cap at max_size
+        assert stm.count() == 12
 
 
 class TestShortTermMemoryClear:
@@ -226,31 +206,6 @@ class TestShortTermMemoryClear:
 
 class TestShortTermMemoryEdgeCases:
     """Test edge cases."""
-
-    def test_max_size_one(self):
-        """Test with max_size of 1."""
-        stm = ShortTermMemory(max_size=1)
-
-        msg1 = LLMMessage(role="user", content="First")
-        msg2 = LLMMessage(role="user", content="Second")
-
-        stm.add_message(msg1)
-        assert stm.count() == 1
-        assert stm.is_full()
-
-        stm.add_message(msg2)
-        assert stm.count() == 1
-        messages = stm.get_messages()
-        assert messages == [msg2]  # Only second message
-
-    def test_max_size_zero(self):
-        """Test with max_size of 0 (degenerate case)."""
-        stm = ShortTermMemory(max_size=0)
-
-        stm.add_message(LLMMessage(role="user", content="Message"))
-
-        # With maxlen=0, deque doesn't store anything
-        assert stm.count() == 0
 
     def test_large_max_size(self):
         """Test with very large max_size."""
@@ -328,27 +283,6 @@ class TestShortTermMemoryBehavior:
         # But contain same messages
         assert messages1 == messages2
 
-    def test_eviction_doesnt_affect_cleared_messages(self):
-        """Test that eviction doesn't affect previously cleared messages."""
-        stm = ShortTermMemory(max_size=2)
-
-        msg1 = LLMMessage(role="user", content="1")
-        msg2 = LLMMessage(role="user", content="2")
-
-        stm.add_message(msg1)
-        stm.add_message(msg2)
-
-        cleared = stm.clear()
-
-        # Add new messages
-        stm.add_message(LLMMessage(role="user", content="3"))
-        stm.add_message(LLMMessage(role="user", content="4"))
-
-        # Cleared messages should still be intact
-        assert len(cleared) == 2
-        assert cleared[0].content == "1"
-        assert cleared[1].content == "2"
-
     def test_sequential_operations(self):
         """Test a sequence of mixed operations."""
         stm = ShortTermMemory(max_size=3)
@@ -361,10 +295,11 @@ class TestShortTermMemoryBehavior:
         stm.add_message(LLMMessage(role="user", content="3"))
         assert stm.is_full()
 
+        # No eviction — messages accumulate past max_size
         stm.add_message(LLMMessage(role="user", content="4"))
         messages = stm.get_messages()
-        assert len(messages) == 3
-        assert messages[0].content == "2"  # "1" was evicted
+        assert len(messages) == 4
+        assert messages[0].content == "1"  # All preserved
 
         stm.clear()
         assert stm.count() == 0
@@ -437,3 +372,36 @@ class TestShortTermMemoryRemoveLast:
 
         assert stm.count() == 1
         assert stm.get_messages() == [msg]
+
+
+class TestShortTermMemoryRemoveFirst:
+    """Test remove_first functionality."""
+
+    def test_remove_first_returns_removed_messages(self):
+        """Test that remove_first returns the removed messages."""
+        stm = ShortTermMemory(max_size=10)
+        msg1 = LLMMessage(role="user", content="First")
+        msg2 = LLMMessage(role="assistant", content="Second")
+        msg3 = LLMMessage(role="user", content="Third")
+
+        stm.add_message(msg1)
+        stm.add_message(msg2)
+        stm.add_message(msg3)
+
+        removed = stm.remove_first(2)
+
+        assert removed == [msg1, msg2]
+        assert stm.count() == 1
+        assert stm.get_messages() == [msg3]
+
+    def test_remove_first_more_than_available(self):
+        """Test removing more messages than available."""
+        stm = ShortTermMemory(max_size=10)
+        msg1 = LLMMessage(role="user", content="First")
+
+        stm.add_message(msg1)
+
+        removed = stm.remove_first(5)
+
+        assert removed == [msg1]
+        assert stm.count() == 0
